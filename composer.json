@@ -11,6 +11,8 @@
         }
     },
     "require": {
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*",
         "jenssegers/imagehash": "*",
         "php-ffmpeg/php-ffmpeg": "*",
         "slim/slim": "*",
