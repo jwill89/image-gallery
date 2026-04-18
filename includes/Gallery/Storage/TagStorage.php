@@ -142,14 +142,13 @@ class TagStorage
         $tag_name = strtolower($tag_name);
 
         // First, split the tag name to see if a category shortcode was used.
-        if (strpos($tag_name, ':') !== false) {
+        if (str_contains($tag_name, ':')) {
             // Split the tag name into category shortcode and actual tag name
             [$category_shortcode, $name] = array_map('trim', explode(':', $tag_name, 2));
 
             // Get a category repository and check for a valid category shortcode
             $category_repo = new TagCategoryCollection();
             $category = $category_repo->getByShortcode($category_shortcode);
-            var_dump($category_shortcode, $name, $category); // Debugging line
         } else {
             $category = null;
         }
@@ -227,7 +226,7 @@ class TagStorage
     /**
      * Get tags based on supplied video.
      *
-     * @param Video $video_id The video to retrieve tags for.
+     * @param Video $video The video to retrieve tags for.
      *
      * @return Tag[] An array of Tag objects associated with the video.
      */
@@ -274,11 +273,14 @@ class TagStorage
         // Initialize Tag Data
         $tag_data = [];
 
-        // Setup the Query
+        // Setup the Query using JOINs instead of correlated subqueries for performance
         $sql = "SELECT t.tag_id, t.tag_name, t.category_id, tc.category_name,
-                (SELECT COUNT(*) FROM " . self::IMAGE_TAG_TABLE . " it WHERE it.tag_id = t.tag_id) AS image_count,
-                (SELECT COUNT(*) FROM " . self::VIDEO_TAG_TABLE . " vt WHERE vt.tag_id = t.tag_id) AS video_count
-             FROM " . self::MAIN_TABLE . " t LEFT JOIN " . self::CATEGORIES_TABLE . " tc USING (category_id)
+                COALESCE(ic.image_count, 0) AS image_count,
+                COALESCE(vc.video_count, 0) AS video_count
+             FROM " . self::MAIN_TABLE . " t
+             LEFT JOIN " . self::CATEGORIES_TABLE . " tc USING (category_id)
+             LEFT JOIN (SELECT tag_id, COUNT(*) AS image_count FROM " . self::IMAGE_TAG_TABLE . " GROUP BY tag_id) ic ON ic.tag_id = t.tag_id
+             LEFT JOIN (SELECT tag_id, COUNT(*) AS video_count FROM " . self::VIDEO_TAG_TABLE . " GROUP BY tag_id) vc ON vc.tag_id = t.tag_id
              ORDER BY t.category_id ASC, t.tag_name ASC";
 
         // Prepare statement

@@ -92,7 +92,7 @@ class ImageStorage
         $image = null;
 
         // Setup the Query
-        $sql = "SELECT * FROM " . self::MAIN_TABLE . "WHERE file_name = :file_name";
+        $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE file_name = :file_name";
 
         // Prepare statement
         $stmt = $this->db->prepare($sql);
@@ -137,15 +137,16 @@ class ImageStorage
         // Calculate the offset for pagination
         $offset = ($page_number - 1) * $items_per_page;
 
-        // Setup the Query
+        // Setup the Query with parameterized placeholders for tag IDs
+        $placeholders = implode(',', array_fill(0, $tag_count, '?'));
         $sql = "SELECT img.* FROM " . self::MAIN_TABLE . " img
                     LEFT JOIN " . self::TAGS_TABLE . " tag
                     USING (image_id)
-                    WHERE tag.tag_id IN (" . implode(',', $tag_ids) . ")
+                    WHERE tag.tag_id IN ($placeholders)
                     GROUP BY img.image_id 
-                    HAVING COUNT(DISTINCT tag.tag_id) = :tag_count
+                    HAVING COUNT(DISTINCT tag.tag_id) = ?
                     ORDER BY img.image_id DESC
-                    LIMIT :limit OFFSET :offset";
+                    LIMIT ? OFFSET ?";
 
         // Prepare statement
         $stmt = $this->db->prepare($sql);
@@ -153,9 +154,13 @@ class ImageStorage
         // If prepared successfully
         if ($stmt) {
             // Bind the parameters to the query
-            $stmt->bindParam(':tag_count', $tag_count, PDO::PARAM_INT);
-            $stmt->bindValue(':limit', $items_per_page, PDO::PARAM_INT);
-            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $bind_index = 1;
+            foreach ($tag_ids as $tid) {
+                $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
+            }
+            $stmt->bindValue($bind_index++, $tag_count, PDO::PARAM_INT);
+            $stmt->bindValue($bind_index++, $items_per_page, PDO::PARAM_INT);
+            $stmt->bindValue($bind_index, $offset, PDO::PARAM_INT);
 
             // Try executing
             if ($stmt->execute()) {
@@ -251,13 +256,14 @@ class ImageStorage
         // Count the number of tags
         $tag_count = count($tag_ids);
 
-        // Setup the Query
+        // Setup the Query with parameterized placeholders for tag IDs
+        $placeholders = implode(',', array_fill(0, $tag_count, '?'));
         $sql = "SELECT COUNT(*) FROM (SELECT img.* FROM " . self::MAIN_TABLE . " img
                     LEFT JOIN " . self::TAGS_TABLE . " tag
                     USING (image_id)
-                    WHERE tag.tag_id IN (" . implode(',', $tag_ids) . ")
+                    WHERE tag.tag_id IN ($placeholders)
                     GROUP BY img.image_id 
-                    HAVING COUNT(DISTINCT tag.tag_id) = :tag_count)";
+                    HAVING COUNT(DISTINCT tag.tag_id) = ?)";
 
         // Prepare statement
         $stmt = $this->db->prepare($sql);
@@ -265,7 +271,11 @@ class ImageStorage
         // If prepared successfully
         if ($stmt) {
             // Bind the parameters to the query
-            $stmt->bindParam(':tag_count', $tag_count, PDO::PARAM_INT);
+            $bind_index = 1;
+            foreach ($tag_ids as $tid) {
+                $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
+            }
+            $stmt->bindValue($bind_index, $tag_count, PDO::PARAM_INT);
 
             // Try executing
             if ($stmt->execute()) {

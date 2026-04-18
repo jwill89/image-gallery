@@ -14,7 +14,7 @@ class VideoStorage
 {
     // Table Constants
     private const string MAIN_TABLE = 'videos';
-    private const string TAGS_TABLE = 'videos_tags';
+    private const string TAGS_TABLE = 'video_tags';
 
     // Main Class Object Constant
     private const string OBJ_CLASS = Video::class;
@@ -90,7 +90,7 @@ class VideoStorage
         $video = null;
 
         // Setup the Query
-        $sql = "SELECT * FROM " . self::MAIN_TABLE . "WHERE file_name = :file_name";
+        $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE file_name = :file_name";
 
         // Prepare statement
         $stmt = $this->db->prepare($sql);
@@ -135,15 +135,16 @@ class VideoStorage
         // Calculate the offset for pagination
         $offset = ($page_number - 1) * $items_per_page;
 
-        // Setup the Query
+        // Setup the Query with parameterized placeholders for tag IDs
+        $placeholders = implode(',', array_fill(0, $tag_count, '?'));
         $sql = "SELECT vid.* FROM " . self::MAIN_TABLE . " vid
                     LEFT JOIN " . self::TAGS_TABLE . " tag
                     USING (video_id)
-                    WHERE tag.tag_id IN (" . implode(',', $tag_ids) . ")
+                    WHERE tag.tag_id IN ($placeholders)
                     GROUP BY vid.video_id 
-                    HAVING COUNT(DISTINCT tag.tag_id) = :tag_count
+                    HAVING COUNT(DISTINCT tag.tag_id) = ?
                     ORDER BY vid.video_id DESC
-                    LIMIT :limit OFFSET :offset";
+                    LIMIT ? OFFSET ?";
 
         // Prepare statement
         $stmt = $this->db->prepare($sql);
@@ -151,9 +152,13 @@ class VideoStorage
         // If prepared successfully
         if ($stmt) {
             // Bind the parameters to the query
-            $stmt->bindParam(':tag_count', $tag_count, PDO::PARAM_INT);
-            $stmt->bindValue(':limit', $items_per_page, PDO::PARAM_INT);
-            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $bind_index = 1;
+            foreach ($tag_ids as $tid) {
+                $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
+            }
+            $stmt->bindValue($bind_index++, $tag_count, PDO::PARAM_INT);
+            $stmt->bindValue($bind_index++, $items_per_page, PDO::PARAM_INT);
+            $stmt->bindValue($bind_index, $offset, PDO::PARAM_INT);
 
             // Try executing
             if ($stmt->execute()) {
@@ -249,21 +254,26 @@ class VideoStorage
         // Count the number of tags
         $tag_count = count($tag_ids);
 
-        // Setup the Query
+        // Setup the Query with parameterized placeholders for tag IDs
+        $placeholders = implode(',', array_fill(0, $tag_count, '?'));
         $sql = "SELECT COUNT(*) FROM (SELECT vid.* FROM " . self::MAIN_TABLE . " vid
                     LEFT JOIN " . self::TAGS_TABLE . " tag
                     USING (video_id)
-                    WHERE tag.tag_id IN (" . implode(',', $tag_ids) . ")
+                    WHERE tag.tag_id IN ($placeholders)
                     GROUP BY vid.video_id 
-                    HAVING COUNT(DISTINCT tag.tag_id) = :tag_count)";
+                    HAVING COUNT(DISTINCT tag.tag_id) = ?)";
 
         // Prepare statement
         $stmt = $this->db->prepare($sql);
 
         // If prepared successfully
         if ($stmt) {
-            // Bind the tag count to the query
-            $stmt->bindParam(':tag_count', $tag_count, PDO::PARAM_INT);
+            // Bind the parameters to the query
+            $bind_index = 1;
+            foreach ($tag_ids as $tid) {
+                $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
+            }
+            $stmt->bindValue($bind_index, $tag_count, PDO::PARAM_INT);
 
             // Try executing
             if ($stmt->execute()) {
