@@ -2,7 +2,7 @@
  * @file gallery.js
  * @author MathDad <https://www.mathdad.me>
  * @license MIT
- * @version 1.0.3
+ * @version 1.1.0
  * @description This file contains the JavaScript code for the site. It handles the loading of images and videos, pagination, and tag management.
  */
 
@@ -28,7 +28,7 @@ let API_BASE_URL = '';
 let PAGE_TITLE = 'Gallery';
 let CURRENT_TAGS = [];
 let ALL_TAGS = [];
-let CURRENT_PAGE = PAGE_IMAGES;
+let CURRENT_PAGE = 1;
 let PAGE_TYPE = PAGE_IMAGES;
 let ITEMS_PER_PAGE = 40;
 let BLUR_THUMBNAILS = false;
@@ -36,8 +36,106 @@ let SHOWING_MEDIA_TAGS = false;
 let MEDIA_ID = null;
 
 /**
+ * Reusable JSON headers for API requests.
+ * @const {Object}
+ */
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+/**
+ * Map of category IDs to Bulma CSS tag classes.
+ * @const {Object<number, string>}
+ */
+const CATEGORY_TAG_CLASS_MAP = {
+    1: 'is-white',
+    2: 'is-danger',
+    3: 'is-success',
+    4: 'is-warning',
+    5: 'is-info'
+};
+
+/**
+ * Map of category names to Bulma CSS text classes.
+ * @const {Object<string, string>}
+ */
+const CATEGORY_TEXT_CLASS_MAP = {
+    'General':       'has-text-white',
+    'Artist':        'has-text-danger',
+    'Character':     'has-text-success',
+    'Source':        'has-text-warning',
+    'Personal List': 'has-text-info'
+};
+
+/**
+ * Map of category names to Bulma CSS tag classes.
+ * @const {Object<string, string>}
+ */
+const CATEGORY_NAME_CLASS_MAP = {
+    'General':       'is-white',
+    'Artist':        'is-danger',
+    'Character':     'is-success',
+    'Source':        'is-warning',
+    'Personal List': 'is-info'
+};
+
+// ============================================================
+// Utility / Helper Functions
+// ============================================================
+
+/**
+ * @function fetchApi
+ * @description Generic API fetch wrapper. Handles response validation and JSON parsing.
+ * @async
+ * @param {string} url - The API endpoint URL.
+ * @param {Object} [options={}] - Optional fetch options (method, headers, body, etc.).
+ * @returns {Promise<*>} The parsed JSON response data.
+ */
+async function fetchApi(url, options = {}) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status} for ${url}`);
+    }
+    return response.json();
+}
+
+/**
+ * @function getActiveMediaInfo
+ * @description Returns the ID, URL, and hash of the currently-viewed media item on the tags page.
+ * @returns {{ itemID: number, itemURL: string, itemHash: string }}
+ */
+function getActiveMediaInfo() {
+    const selector = PAGE_TYPE === PAGE_IMAGES ? '#tag-image' : '#tag-video';
+    const $el = $(selector);
+    return {
+        itemID:   $el.data('id'),
+        itemURL:  $el.prop('src'),
+        itemHash: ($('#hash-display').text() || '').replace('MD5 Hash: ', '')
+    };
+}
+
+/**
+ * @function createEl
+ * @description Shorthand to create a DOM element with classes and attributes.
+ * @param {string} tag - HTML tag name.
+ * @param {string[]} [classes=[]] - CSS classes to add.
+ * @param {Object<string,string>} [attrs={}] - Attributes to set.
+ * @returns {HTMLElement}
+ */
+function createEl(tag, classes = [], attrs = {}) {
+    const el = document.createElement(tag);
+    if (classes.length) el.classList.add(...classes);
+    for (const [key, value] of Object.entries(attrs)) {
+        el.setAttribute(key, value);
+    }
+    return el;
+}
+
+// ============================================================
+// Initialization
+// ============================================================
+
+/**
  * @description This function is called when the page is loaded. It initializes the page by setting the title, loading tags, and setting the total images/videos in the footer.
-*/
+ */
 $(function () {
     // Site Initialization
     SiteInit();
@@ -61,184 +159,66 @@ function SiteInit() {
     BASE_URL = window.location.origin;
     API_BASE_URL = `${BASE_URL}/api`;
 
-    // Set gallery title
-    getPageTitle().then((title) => {
+    // Run all initialization calls in parallel
+    Promise.all([
+        getPageTitle(),
+        getTags(),
+        getTotalImages(),
+        getTotalVideos()
+    ]).then(([title, tags, totalImages, totalVideos]) => {
+        // Set gallery title
         PAGE_TITLE = title;
         setPageTitle();
-    });
 
-    // Load all current tags
-    RefreshTags();
+        // Set all tags
+        ALL_TAGS = tags || [];
+        setTagList(ALL_TAGS);
 
-    // Set total images in footer
-    getTotalImages().then((total) => {
-        $('#total-images').html(total);
-    });
-
-    // Set total videos in footer
-    getTotalVideos().then((total) => {
-        $('#total-videos').html(total);
+        // Set totals in footer
+        $('#total-images').text(totalImages);
+        $('#total-videos').text(totalVideos);
+    }).catch((error) => {
+        console.error('Error during site initialization:', error);
     });
 }
+
+// ============================================================
+// Page Rendering
+// ============================================================
 
 /**
  * @function RenderPageGallery
  * @description Generates the gallery content based on the current page and type (images or videos).
  */
 function RenderPageGallery() {
-    /**
-     * @var {HTMLElement} gallerySection - The section of the page where the gallery content will be displayed
-     * @var {HTMLElement} galleryDisplay - The div where the images/videos will be displayed
-     * @var {Promise} galleryPromise - The promise that resolves when the images/videos are loaded
-     */
     const gallerySection = $('#gallery-content');
     const galleryDisplay = $('#gallery-display');
-    let galleryPromise;
 
     // Update the Page Title
     setPageTitle();
 
-    // Determine if we are viewing images or videos and get the corresponding promise
-    if (PAGE_TYPE === PAGE_IMAGES) {
-        galleryPromise = getImagesForPage(CURRENT_PAGE);
-    } else if (PAGE_TYPE === PAGE_VIDEOS) {
-        galleryPromise = getVideosForPage(CURRENT_PAGE);
-    }
+    // Determine which fetch to use
+    const galleryPromise = (PAGE_TYPE === PAGE_IMAGES)
+        ? getImagesForPage(CURRENT_PAGE)
+        : getVideosForPage(CURRENT_PAGE);
 
     // Resolve the promise and create the gallery content
     galleryPromise.then((items) => {
-
-        // Create the Container
-        /** @var {HTMLElement} columnDiv - The main column div containing the content */
-        const columnDiv = document.createElement('div');
-        columnDiv.classList.add('column', 'is-full', 'is-align-content-end');
-
-        // Parent Div
-        const parentDiv = document.createElement('div');
-        parentDiv.classList.add('parent');
-
-        // Append to Parent
+        // Use a DocumentFragment for efficient batch DOM construction
+        const fragment = document.createDocumentFragment();
+        const columnDiv = createEl('div', ['column', 'is-full', 'is-align-content-end']);
+        const parentDiv = createEl('div', ['parent']);
         columnDiv.appendChild(parentDiv);
 
         // Loop Through Images/Videos
         items.forEach(item => {
-
-            let item_id,
-                thumbnail_path,
-                full_path,
-                hash;
-
-            if (PAGE_TYPE === PAGE_IMAGES) {
-                item_id = item.image_id;
-                thumbnail_path = `${BASE_URL}/images/thumbs/${item.file_name}`;
-                full_path = `${BASE_URL}/images/full/${item.file_name}`;
-                hash = item.hash;
-            } else if (PAGE_TYPE === PAGE_VIDEOS) {
-                item_id = item.video_id;
-                thumbnail_path = `${BASE_URL}/videos/thumbs/${item.file_name.split('.').slice(0, -1).join('.')}.jpg`;
-                full_path = `${BASE_URL}/videos/full/${item.file_name}`;
-                hash = item.hash
-            }
-
-            // Flex Div
-            const flexDiv = document.createElement('div');
-            flexDiv.classList.add('is-flex', 'is-align-self-flex-end');
-
-            // Card Div
-            const cardDiv = document.createElement('div');
-            cardDiv.classList.add('card', 'child', 'has-border-white');
-
-            // Card Content Div
-            const cardContentDiv = document.createElement('div');
-            cardContentDiv.classList.add('card-content', 'has-text-centered', 'has-background-grey-darker');
-
-            // Card Figure
-            const cardFigureDiv = document.createElement('figure');
-            cardFigureDiv.classList.add('image');
-
-            // Card Figure Image- Thumbnail
-            const cardFigureImage = document.createElement('img');
-            cardFigureImage.setAttribute('alt', '');
-            cardFigureImage.classList.add('gallery-image');
-            if (BLUR_THUMBNAILS) {
-                cardFigureImage.classList.add('thumb-blur');
-            }
-            cardFigureImage.setAttribute('src', thumbnail_path);
-
-            // Card Footer
-            const cardFooterDiv = document.createElement('footer');
-            cardFooterDiv.classList.add('card-footer', 'has-background-light');
-
-            // Card Footer - Link - Lightbox
-            const cardFooterLinkLightbox = document.createElement('a');
-            cardFooterLinkLightbox.classList.add('card-footer-item');
-            cardFooterLinkLightbox.setAttribute('href', full_path);
-            cardFooterLinkLightbox.setAttribute('data-lightbox', "page-items");
-            cardFooterLinkLightbox.setAttribute('data-title', "Tags List Coming Soon");
-
-            // Card Footer - Link - Lightbox - Span
-            const cardFooterLinkLightboxSpan = document.createElement('span');
-            cardFooterLinkLightboxSpan.classList.add('icon', 'has-text-info-dark');
-
-            // Card Footer - Link - Lightbox - Span - Icon
-            const cardFooterLinkLightboxSpanIcon = document.createElement('i');
-            cardFooterLinkLightboxSpanIcon.classList.add('fa-solid', 'fa-magnifying-glass-plus');
-            cardFooterLinkLightboxSpanIcon.setAttribute('title', 'Zoom In');
-
-            // Card Footer - Link - Full
-            const cardFooterLinkFull = document.createElement('a');
-            cardFooterLinkFull.classList.add('card-footer-item');
-            cardFooterLinkFull.setAttribute('href', full_path);
-            cardFooterLinkFull.setAttribute('target', '_blank');
-            cardFooterLinkFull.setAttribute('id', 'item-full-' + item_id);
-
-            // Card Footer - Link - Full - Span
-            const cardFooterLinkFullSpan = document.createElement('span');
-            cardFooterLinkFullSpan.classList.add('icon', 'has-text-info-dark');
-
-            // Card Footer - Link - Full - Span - Icon
-            const cardFooterLinkFullSpanIcon = document.createElement('i');
-            cardFooterLinkFullSpanIcon.classList.add('fa-solid', 'fa-up-right-from-square');
-            cardFooterLinkFullSpanIcon.setAttribute('title', 'View Full Size in New Tab');
-
-            // Card Footer - Link - Tags
-            const cardFooterLinkTags = document.createElement('a');
-            cardFooterLinkTags.classList.add('card-footer-item', 'link-tags-page');
-            cardFooterLinkTags.setAttribute('data-id', item_id);
-            cardFooterLinkTags.setAttribute('data-hash', hash);
-
-            // Card Footer - Link - Tags - Span
-            const cardFooterLinkTagsSpan = document.createElement('span');
-            cardFooterLinkTagsSpan.classList.add('icon', 'has-text-info-dark');
-
-            // Card Footer - Link - Tags - Span - Icon
-            const cardFooterLinkTagsSpanIcon = document.createElement('i');
-            cardFooterLinkTagsSpanIcon.classList.add('fa-solid', 'fa-tags');
-            cardFooterLinkTagsSpanIcon.setAttribute('title', 'Add/View Tags');
-
-            // Build Card
-            flexDiv.appendChild(cardDiv);
-            cardDiv.appendChild(cardContentDiv);
-            cardContentDiv.appendChild(cardFigureDiv);
-            cardFigureDiv.appendChild(cardFigureImage);
-            cardDiv.appendChild(cardFooterDiv);
-            cardFooterDiv.appendChild(cardFooterLinkLightbox);
-            cardFooterLinkLightbox.appendChild(cardFooterLinkLightboxSpan);
-            cardFooterLinkLightboxSpan.appendChild(cardFooterLinkLightboxSpanIcon);
-            cardFooterDiv.appendChild(cardFooterLinkFull);
-            cardFooterLinkFull.appendChild(cardFooterLinkFullSpan);
-            cardFooterLinkFullSpan.appendChild(cardFooterLinkFullSpanIcon);
-            cardFooterDiv.appendChild(cardFooterLinkTags);
-            cardFooterLinkTags.appendChild(cardFooterLinkTagsSpan);
-            cardFooterLinkTagsSpan.appendChild(cardFooterLinkTagsSpanIcon);
-
-            // Append to Parent
-            parentDiv.appendChild(flexDiv);
-
+            parentDiv.appendChild(createGalleryCard(item));
         });
 
+        fragment.appendChild(columnDiv);
+
         // Clear and Append New Page
-        galleryDisplay.empty().append(columnDiv);
+        galleryDisplay.empty().append(fragment);
 
         // Show the Gallery Section
         gallerySection.removeClass('is-hidden');
@@ -250,8 +230,90 @@ function RenderPageGallery() {
         RenderGalleryPagination();
 
         // Scroll to top of page
-        document.body.scrollIntoView({behavior: "smooth"});
+        document.body.scrollIntoView({ behavior: 'smooth' });
     });
+}
+
+/**
+ * @function createGalleryCard
+ * @description Builds a single gallery card element for an image or video item.
+ * @param {Object} item - The image or video data object from the API.
+ * @returns {HTMLElement} The constructed card flex wrapper element.
+ */
+function createGalleryCard(item) {
+    let itemId, thumbnailPath, fullPath, hash;
+
+    if (PAGE_TYPE === PAGE_IMAGES) {
+        itemId = item.image_id;
+        thumbnailPath = `${BASE_URL}/images/thumbs/${item.file_name}`;
+        fullPath = `${BASE_URL}/images/full/${item.file_name}`;
+        hash = item.hash;
+    } else {
+        itemId = item.video_id;
+        const baseName = item.file_name.split('.').slice(0, -1).join('.');
+        thumbnailPath = `${BASE_URL}/videos/thumbs/${baseName}.jpg`;
+        fullPath = `${BASE_URL}/videos/full/${item.file_name}`;
+        hash = item.hash;
+    }
+
+    // Card structure
+    const flexDiv = createEl('div', ['is-flex', 'is-align-self-flex-end']);
+    const cardDiv = createEl('div', ['card', 'child', 'has-border-white']);
+    const cardContentDiv = createEl('div', ['card-content', 'has-text-centered', 'has-background-grey-darker']);
+    const cardFigureDiv = createEl('figure', ['image']);
+
+    // Thumbnail image
+    const imgClasses = BLUR_THUMBNAILS ? ['gallery-image', 'thumb-blur'] : ['gallery-image'];
+    const cardFigureImage = createEl('img', imgClasses, { alt: '', src: thumbnailPath });
+
+    // Card Footer
+    const cardFooterDiv = createEl('footer', ['card-footer', 'has-background-light']);
+
+    // Footer link – Lightbox
+    const lightboxLink = createEl('a', ['card-footer-item'], {
+        href: fullPath,
+        'data-lightbox': 'page-items',
+        'data-title': 'Tags List Coming Soon'
+    });
+    lightboxLink.appendChild(createFooterIcon('fa-magnifying-glass-plus', 'Zoom In'));
+
+    // Footer link – Full size
+    const fullLink = createEl('a', ['card-footer-item'], {
+        href: fullPath,
+        target: '_blank',
+        id: `item-full-${itemId}`
+    });
+    fullLink.appendChild(createFooterIcon('fa-up-right-from-square', 'View Full Size in New Tab'));
+
+    // Footer link – Tags
+    const tagsLink = createEl('a', ['card-footer-item', 'link-tags-page'], {
+        'data-id': itemId,
+        'data-hash': hash
+    });
+    tagsLink.appendChild(createFooterIcon('fa-tags', 'Add/View Tags'));
+
+    // Assemble
+    cardFigureDiv.appendChild(cardFigureImage);
+    cardContentDiv.appendChild(cardFigureDiv);
+    cardDiv.appendChild(cardContentDiv);
+    cardFooterDiv.append(lightboxLink, fullLink, tagsLink);
+    cardDiv.appendChild(cardFooterDiv);
+    flexDiv.appendChild(cardDiv);
+
+    return flexDiv;
+}
+
+/**
+ * @function createFooterIcon
+ * @description Creates a footer icon span with the specified FontAwesome icon class and title.
+ * @param {string} iconClass - FontAwesome icon class name (without 'fa-solid' prefix).
+ * @param {string} title - The title/tooltip text.
+ * @returns {HTMLElement} The span element containing the icon.
+ */
+function createFooterIcon(iconClass, title) {
+    const span = createEl('span', ['icon', 'has-text-info-dark']);
+    span.appendChild(createEl('i', ['fa-solid', iconClass], { title }));
+    return span;
 }
 
 /**
@@ -259,152 +321,116 @@ function RenderPageGallery() {
  * @description Generates the pagination for the gallery based on the current page and type (images or videos).
  */
 function RenderGalleryPagination() {
-    // Define the Page Section
     const gallerySection = $('#gallery-content');
-
-    // Define the Pagination Divs
     const topPagination = $('#pagination-top');
     const bottomPagination = $('#pagination-bottom');
-    let pagesPromise;
 
-    if (PAGE_TYPE === PAGE_IMAGES) {
-        pagesPromise = getTotalImagePages();
-    } else if (PAGE_TYPE === PAGE_VIDEOS) {
-        pagesPromise = getTotalVideoPages();
-    }
+    const pagesPromise = (PAGE_TYPE === PAGE_IMAGES)
+        ? getTotalImagePages()
+        : getTotalVideoPages();
 
-    pagesPromise.then((result) => {
-        const NextPage = CURRENT_PAGE + 1;
-        const PreviousPage = CURRENT_PAGE - 1;
-        const TotalPages = result;
+    pagesPromise.then((totalPages) => {
+        const nextPage = CURRENT_PAGE + 1;
+        const previousPage = CURRENT_PAGE - 1;
 
-        // Pagination - Navigation
-        const paginationTop = document.createElement('nav');
-        paginationTop.className = 'pagination is-centered';
-        paginationTop.setAttribute('role', 'navigation');
-        paginationTop.setAttribute('aria-label', 'pagination');
+        // Pagination nav
+        const paginationNav = createEl('nav', ['pagination', 'is-centered'], {
+            role: 'navigation',
+            'aria-label': 'pagination'
+        });
 
-        // Pagination - Navigation - Link - Previous
-        const previousLink = document.createElement('a');
-        previousLink.innerHTML = 'Previous';
+        // Previous / Next links
+        const previousLink = createEl('a', [
+            'pagination-previous',
+            ...(CURRENT_PAGE <= 1 ? ['is-disabled'] : [])
+        ]);
+        previousLink.textContent = 'Previous';
 
-        // Do we have an enabled previous page? (Page > 1)
-        previousLink.className = (CURRENT_PAGE > 1) ? 'pagination-previous' : 'pagination-previous is-disabled';
+        const nextLink = createEl('a', [
+            'pagination-next',
+            ...(CURRENT_PAGE >= totalPages ? ['is-disabled'] : [])
+        ]);
+        nextLink.textContent = 'Next';
 
-        // Pagination - Navigation - Link - Next
-        const nextLink = document.createElement('a');
-        nextLink.innerHTML = 'Next';
+        // Page number list
+        const pageNumberList = createEl('ul', ['pagination-list']);
 
-        // Do we have an enabled next page? (Page < Total Pages)
-        nextLink.className = (CURRENT_PAGE < TotalPages) ? 'pagination-next' : 'pagination-next is-disabled';
-
-        // Pagination - Navigation - Links - Pages List
-        const pageNumberList = document.createElement('ul');
-        pageNumberList.className = 'pagination-list';
-
-        // Pagination - Navigation - Links - Pages List - Ellipsis
-        const listItemEllipsesEarly = document.createElement('li');
-        const listItemEllipsesSpan = document.createElement('span');
-        listItemEllipsesSpan.className = 'pagination-ellipsis';
-        listItemEllipsesSpan.innerHTML = '&hellip;';
-        listItemEllipsesEarly.appendChild(listItemEllipsesSpan);
-        const listItemEllipsesLate = listItemEllipsesEarly.cloneNode(true);
-
-        // Pagination - Navigation - Links - Pages List - List Element - 1
-        const listItemPage1 = document.createElement('li');
-        const listItemPage1Link = document.createElement('a');
-        listItemPage1Link.className = 'pagination-link';
-        listItemPage1Link.setAttribute('data-page', '1');
-        listItemPage1Link.setAttribute('aria-label', 'Goto page 1');
-        listItemPage1Link.innerHTML = '1';
-        listItemPage1.appendChild(listItemPage1Link);
-
-        // Pagination - Navigation - Links - Pages List - List Element - Previous
-        const listItemPagePrevious = document.createElement('li');
-        const listItemPagePreviousLink = document.createElement('a');
-        listItemPagePreviousLink.className = 'pagination-link';
-        listItemPagePreviousLink.setAttribute('data-page', PreviousPage);
-        listItemPagePreviousLink.setAttribute('aria-label', 'Goto page ' + PreviousPage);
-        listItemPagePreviousLink.innerHTML = PreviousPage;
-        listItemPagePrevious.appendChild(listItemPagePreviousLink);
-
-        // Pagination - Navigation - Links - Pages List - List Element - Current
-        const listItemPageCurrent = document.createElement('li');
-        const listItemPageCurrentLink = document.createElement('a');
-        listItemPageCurrentLink.className = 'pagination-link is-current';
-        listItemPageCurrentLink.setAttribute('data-page', CURRENT_PAGE);
-        listItemPageCurrentLink.setAttribute('aria-label', 'Page ' + CURRENT_PAGE);
-        listItemPageCurrentLink.setAttribute('aria-current', 'page');
-        listItemPageCurrentLink.innerHTML = CURRENT_PAGE;
-        listItemPageCurrent.appendChild(listItemPageCurrentLink);
-
-        // Pagination - Navigation - Links - Pages List - List Element - Next
-        const listItemPageNext = document.createElement('li');
-        const listItemPageNextLink = document.createElement('a');
-        listItemPageNextLink.className = 'pagination-link';
-        listItemPageNextLink.setAttribute('data-page', NextPage);
-        listItemPageNextLink.setAttribute('aria-label', 'Goto page ' + NextPage);
-        listItemPageNextLink.innerHTML = NextPage;
-        listItemPageNext.appendChild(listItemPageNextLink);
-
-        // Pagination - Navigation - Links - Pages List - List Element - Last
-        const listItemPageLast = document.createElement('li');
-        const listItemPageLastLink = document.createElement('a');
-        listItemPageLastLink.className = 'pagination-link';
-        listItemPageLastLink.setAttribute('data-page', TotalPages);
-        listItemPageLastLink.setAttribute('aria-label', 'Goto page ' + TotalPages);
-        listItemPageLastLink.innerHTML = TotalPages;
-        listItemPageLast.appendChild(listItemPageLastLink);
-
-        // Build Pagination
-        paginationTop.appendChild(previousLink);
-        paginationTop.appendChild(nextLink);
-        paginationTop.appendChild(pageNumberList);
-
-        // Add Page 1 and Ellipses if We're on page 3 or more
+        // Page 1 + early ellipsis (if current >= 3)
         if (CURRENT_PAGE >= 3) {
-            pageNumberList.appendChild(listItemPage1);
-            pageNumberList.appendChild(listItemEllipsesEarly);
+            pageNumberList.appendChild(createPaginationItem(1));
+            pageNumberList.appendChild(createPaginationEllipsis());
         }
 
-        // Previous Page if page 2 or higher
+        // Previous page (if current >= 2)
         if (CURRENT_PAGE >= 2) {
-            pageNumberList.appendChild(listItemPagePrevious);
+            pageNumberList.appendChild(createPaginationItem(previousPage));
         }
 
-        // Current Page
-        pageNumberList.appendChild(listItemPageCurrent);
+        // Current page
+        pageNumberList.appendChild(createPaginationItem(CURRENT_PAGE, true));
 
-        // Next Page if Page < Total Pages
-        if (CURRENT_PAGE < TotalPages) {
-            pageNumberList.appendChild(listItemPageNext);
+        // Next page
+        if (CURRENT_PAGE < totalPages) {
+            pageNumberList.appendChild(createPaginationItem(nextPage));
         }
 
-        // Add Ellipses and Last Page if We're on last page - 2
-        if (CURRENT_PAGE <= (TotalPages - 2)) {
-            pageNumberList.appendChild(listItemEllipsesLate);
-            pageNumberList.appendChild(listItemPageLast);
+        // Late ellipsis + last page
+        if (CURRENT_PAGE <= (totalPages - 2)) {
+            pageNumberList.appendChild(createPaginationEllipsis());
+            pageNumberList.appendChild(createPaginationItem(totalPages));
         }
 
-        // Finish Pagination
-        paginationTop.appendChild(pageNumberList);
+        // Assemble
+        paginationNav.append(previousLink, nextLink, pageNumberList);
 
-        // Clone for Button
-        const paginationBottom = paginationTop.cloneNode(true);
+        // Clone for top and bottom
+        const paginationBottom = paginationNav.cloneNode(true);
 
-        // Check to see if we have the elements
-        topPagination.empty().append(paginationTop);
+        topPagination.empty().append(paginationNav);
         bottomPagination.empty().append(paginationBottom);
 
-        // Bind Pagination Links
+        // Bind events
         AddEventListenersGalleryPagination();
-
-        // Bind Gallery Links
         AddEventListenersGallery();
 
         // Show the Page
         gallerySection.removeClass('is-hidden');
     });
+}
+
+/**
+ * @function createPaginationItem
+ * @description Creates a pagination list item with a page link.
+ * @param {number} page - The page number.
+ * @param {boolean} [isCurrent=false] - Whether this is the current page.
+ * @returns {HTMLElement} An li element containing the pagination link.
+ */
+function createPaginationItem(page, isCurrent = false) {
+    const li = document.createElement('li');
+    const classes = isCurrent ? ['pagination-link', 'is-current'] : ['pagination-link'];
+    const attrs = {
+        'data-page': page,
+        'aria-label': isCurrent ? `Page ${page}` : `Goto page ${page}`
+    };
+    if (isCurrent) attrs['aria-current'] = 'page';
+
+    const link = createEl('a', classes, attrs);
+    link.textContent = page;
+    li.appendChild(link);
+    return li;
+}
+
+/**
+ * @function createPaginationEllipsis
+ * @description Creates a pagination ellipsis list item.
+ * @returns {HTMLElement} An li element containing the ellipsis span.
+ */
+function createPaginationEllipsis() {
+    const li = document.createElement('li');
+    const span = createEl('span', ['pagination-ellipsis']);
+    span.innerHTML = '&hellip;';
+    li.appendChild(span);
+    return li;
 }
 
 /**
@@ -425,73 +451,53 @@ function RenderPageMediaTags(itemID, itemURL, itemHash = null) {
     // Define the Page Section
     const mediaTagsSection = $('#item-tags-content');
     const mediaExtension = itemURL.split('.').pop().toLowerCase();
-    
-     // Get Tags for Item
-     getTagsForItem(itemID).then((tags) => {
+
+    // Get Tags for Item
+    getTagsForItem(itemID).then((tags) => {
         const mediaContainer = $('#tags-page-media');
 
-        // If the Item is an Image or GIF
+        // Create media element (image or video)
         if (PAGE_TYPE === PAGE_IMAGES || mediaExtension === 'gif') {
-            const mediaItem = document.createElement('img');
-            mediaItem.setAttribute('id', 'tag-image');
-            mediaItem.setAttribute('data-id', itemID);
-            mediaItem.setAttribute('alt', '');
-            mediaItem.setAttribute('src', itemURL);
+            const mediaItem = createEl('img', [], {
+                id: 'tag-image',
+                'data-id': itemID,
+                alt: '',
+                src: itemURL
+            });
             mediaContainer.empty().append(mediaItem);
-        // If the Item is a Video
         } else {
-            const mediaItem = document.createElement('video');
-            mediaItem.setAttribute('id', 'tag-video');
-            mediaItem.setAttribute('data-id', itemID);
-            mediaItem.setAttribute('controls', 'controls');
-            mediaItem.setAttribute('src', itemURL);
-            mediaItem.setAttribute('type', 'video/' + mediaExtension);
+            const mediaItem = createEl('video', [], {
+                id: 'tag-video',
+                'data-id': itemID,
+                controls: 'controls',
+                src: itemURL,
+                type: `video/${mediaExtension}`
+            });
             mediaContainer.empty().append(mediaItem);
         }
 
-        // Get the MD5 Hash
+        // Display MD5 Hash
         if (itemHash !== null) {
-            const hashDisplay = document.createElement('p');
-            hashDisplay.classList.add('help');
-            hashDisplay.setAttribute('id', 'hash-display');
-            hashDisplay.innerHTML = `MD5 Hash: ${itemHash}`;
+            const hashDisplay = createEl('p', ['help'], { id: 'hash-display' });
+            hashDisplay.textContent = `MD5 Hash: ${itemHash}`;
             mediaContainer.append(hashDisplay);
         }
-        
-        // Add the Tags
+
+        // Build tag list using a fragment for efficiency
+        const tagListEl = $('#tag-list');
+        const fragment = document.createDocumentFragment();
         tags.forEach((tag) => {
-            const tagSpan = document.createElement('span');
-            tagSpan.classList.add('tag', 'media-tag');
-            let categoryClass;
-            switch (tag.category_id) {
-                case 1:
-                    categoryClass = 'is-white';
-                    break;
-                case 2:
-                    categoryClass = 'is-danger';
-                    break;
-                case 3:
-                    categoryClass = 'is-success';
-                    break;
-                case 4:
-                    categoryClass = 'is-warning';
-                    break;
-                case 5:
-                    categoryClass = 'is-info';
-                    break;
-                default:
-                    categoryClass = 'is-white';
-                    break;
-            }
-            tagSpan.classList.add(categoryClass);
-            tagSpan.innerHTML = tag.tag_name;
-            const tagDeleteButton = document.createElement('button');
-            tagDeleteButton.classList.add('delete');
-            tagDeleteButton.setAttribute('data-id', tag.tag_id);
-            tagDeleteButton.setAttribute('aria-label', 'delete');
-            tagSpan.appendChild(tagDeleteButton);
-            $('#tag-list').append(tagSpan);
+            const categoryClass = CATEGORY_TAG_CLASS_MAP[tag.category_id] || 'is-white';
+            const tagSpan = createEl('span', ['tag', 'media-tag', categoryClass]);
+            tagSpan.textContent = tag.tag_name;
+            const deleteBtn = createEl('button', ['delete'], {
+                'data-id': tag.tag_id,
+                'aria-label': 'delete'
+            });
+            tagSpan.appendChild(deleteBtn);
+            fragment.appendChild(tagSpan);
         });
+        tagListEl.append(fragment);
 
         // Add Bindings for the Tag Page
         AddEventListenersMediaTags();
@@ -506,7 +512,6 @@ function RenderPageMediaTags(itemID, itemURL, itemHash = null) {
  * @description Generates the content for the tags page including rendering the DataTable.
  */
 function RenderPageTags() {
-    // Define the Page Section
     const tagsSection = $('#tags-list-content');
 
     // Update the Page Title
@@ -522,7 +527,6 @@ function RenderPageTags() {
             dataSrc: ''
         },
         destroy: true,
-        retrieve: true,
         processing: true,
         searching: true,
         autoWidth: true,
@@ -550,28 +554,12 @@ function RenderPageTags() {
                 visible: true,
                 searchable: true,
                 render: function (data, type, row) {
-                    let categoryClass = '';
-                    switch (row.category_name) {
-                        case 'General':
-                            categoryClass = 'has-text-white';
-                            break;
-                        case 'Artist':
-                            categoryClass = 'has-text-danger';
-                            break;
-                        case 'Character':
-                            categoryClass = 'has-text-success';
-                            break;
-                        case 'Source':
-                            categoryClass = 'has-text-warning';
-                            break;
-                        case 'Personal List':
-                            categoryClass = 'has-text-info';
-                            break;
-                        default:
-                            categoryClass = 'has-text-white';
-                            break;
-                    }
-                    return `<span class="${categoryClass}">${data}</span>`;
+                    if (type !== 'display') return data;
+                    const categoryClass = CATEGORY_TEXT_CLASS_MAP[row.category_name] || 'has-text-white';
+                    const span = document.createElement('span');
+                    span.className = categoryClass;
+                    span.textContent = data;
+                    return span.outerHTML;
                 }
             },
             {
@@ -586,46 +574,31 @@ function RenderPageTags() {
                 data: 'category_name',
                 visible: true,
                 searchable: true,
-                render: function (data) {
-                    let categoryClass = '';
-                    switch (data) {
-                        case 'General':
-                            categoryClass = 'is-white';
-                            break;
-                        case 'Artist':
-                            categoryClass = 'is-danger';
-                            break;
-                        case 'Character':
-                            categoryClass = 'is-success';
-                            break;
-                        case 'Source':
-                            categoryClass = 'is-warning';
-                            break;
-                        case 'Personal List':
-                            categoryClass = 'is-info';
-                            break;
-                        default:
-                            categoryClass = 'is-white';
-                            break;
-                    }
-                    return `<span class="tag is-medium ${categoryClass}">${data}</span>`;
+                render: function (data, type) {
+                    if (type !== 'display') return data;
+                    const categoryClass = CATEGORY_NAME_CLASS_MAP[data] || 'is-white';
+                    const span = document.createElement('span');
+                    span.className = `tag is-medium ${categoryClass}`;
+                    span.textContent = data;
+                    return span.outerHTML;
                 }
             },
-            {   name: 'image_count',
+            {
+                name: 'image_count',
                 data: 'image_count',
                 visible: true,
                 searchable: true,
                 render: function (data) {
-                    return `<p class="has-text-center">${data}</p>`;
+                    return `<p class="has-text-center">${Number(data)}</p>`;
                 }
             },
-            {   
+            {
                 name: 'video_count',
                 data: 'video_count',
                 visible: true,
                 searchable: true,
                 render: function (data) {
-                    return `<p class="has-text-center">${data}</p>`;
+                    return `<p class="has-text-center">${Number(data)}</p>`;
                 }
             }
         ]
@@ -638,52 +611,38 @@ function RenderPageTags() {
     tagsSection.removeClass('is-hidden');
 }
 
+// ============================================================
+// Page State Management
+// ============================================================
+
 /**
  * @function ClearPages
- * @description Clears the content of all pages and hides them. Individual page render functions will show their pages
+ * @description Clears the content of all pages and hides them. Individual page render functions will show their pages.
  */
 function ClearPages() {
-    // Gallery Page
-    const gallerySection = $('#gallery-content');
-    const gallerySectionTopPagination = $('#pagination-top');
-    const gallerySectionBottomPagination = $('#pagination-bottom');
-    const gallerySectionContent = $('#gallery-display');
-
-    // Media Item Tags Page
-    const mediaTagsSection = $('#item-tags-content');
-    const mediaTagsSectionMediaItem = $('#tags-page-media');
-    const mediaTagsSectionTags = $('#tag-list');
-
-    // Tag List Page
-    const tagsSection = $('#tags-list-content');
-    const tagsSectionTable = $('#tag-list-page-table');
-    const tagsSectionTableBody = $('#tag-list-page-table-body');
-
     // Clear the Gallery Page
-    gallerySectionTopPagination.empty();
-    gallerySectionBottomPagination.empty();
-    gallerySectionContent.empty();
+    $('#pagination-top').empty();
+    $('#pagination-bottom').empty();
+    $('#gallery-display').empty();
 
     // Clear the Media Item Tags Page
-    mediaTagsSectionMediaItem.empty();
-    mediaTagsSectionTags.empty();
+    $('#tags-page-media').empty();
+    $('#tag-list').empty();
 
     // Clear the Tag List Page & DataTable
     if (DataTable.isDataTable('#tag-list-page-table')) {
-        tagsSectionTable.DataTable().clear().destroy();
-        tagsSectionTableBody.empty();
+        $('#tag-list-page-table').DataTable().clear().destroy();
+        $('#tag-list-page-table-body').empty();
     }
 
     // Hide All Pages (Sections)
-    gallerySection.addClass('is-hidden');
-    mediaTagsSection.addClass('is-hidden');
-    tagsSection.addClass('is-hidden');
+    $('#gallery-content, #item-tags-content, #tags-list-content').addClass('is-hidden');
 }
 
 /**
  * @function NavigationSetActive
  * @description Sets the appropriate link as active in the navigation bar.
- * @param {HTMLElement} activeLink 
+ * @param {jQuery} activeLink
  */
 function NavigationSetActive(activeLink) {
     $('a.navbar-item').removeClass('is-selected');
@@ -695,60 +654,37 @@ function NavigationSetActive(activeLink) {
  * @description Sets the current URL in the browser to the new page type and number.
  */
 function SetCurrentURL() {
-    // Get the base URL
-    const currentURL = window.location.href.split('/')[0];
+    const pageTypeMap = {
+        [PAGE_IMAGES]: 'images',
+        [PAGE_VIDEOS]: 'videos',
+        [PAGE_TAGS]:   'tags'
+    };
+    const pageType = pageTypeMap[PAGE_TYPE] || 'images';
+    let newURL;
 
-    // Initialize new url
-    let newURL,
-        pageType;
-
-    // Set Page Type based on the current page type
-    switch (PAGE_TYPE) {
-        case PAGE_IMAGES:
-            pageType = 'images';
-            break;
-        case PAGE_VIDEOS:
-            pageType = 'videos';
-            break;
-        case PAGE_TAGS:
-            pageType = 'tags';
-            break;
-    }
-
-    // Set new URL base on page type and if we have a page number
     if (SHOWING_MEDIA_TAGS) {
-        newURL = `${currentURL}/${pageType}/${MEDIA_ID}/tags/`;
+        newURL = `${BASE_URL}/${pageType}/${MEDIA_ID}/tags/`;
     } else if (PAGE_TYPE !== PAGE_TAGS) {
-        newURL = `${currentURL}/${pageType}/${CURRENT_PAGE}/`;
+        newURL = `${BASE_URL}/${pageType}/${CURRENT_PAGE}/`;
     } else {
-        newURL = `${currentURL}/${pageType}/`;
+        newURL = `${BASE_URL}/${pageType}/`;
     }
 
-    // Set the new URL in the browser
-    window.history.pushState({path: newURL}, '', newURL);
+    window.history.pushState({ path: newURL }, '', newURL);
 }
+
+// ============================================================
+// Event Listeners
+// ============================================================
 
 /**
  * @function AddEventListenersToSite
- * @description Binds site-wide listeners to their needed elements
+ * @description Binds site-wide listeners to their needed elements.
  */
 function AddEventListenersToSite() {
-    // Close All Modals - Buttons
-    $('.modal-close').on('click', function () {
-        CloseModal();
-    });
+    // Close All Modals - Buttons, background, and escape key
+    $('.modal-close, .modal-delete, .modal-background').on('click', CloseModal);
 
-    // Close All Modals - Buttons
-    $('.modal-delete').on('click', function () {
-        CloseModal();
-    });
-
-    // Close Modal - Background
-    $('.modal-background').on('click', function () {
-        CloseModal();
-    });
-
-    // Close Modal - Escape Key
     $(document).on('keyup', function (event) {
         if (event.key === 'Escape') {
             CloseModal();
@@ -763,8 +699,8 @@ function AddEventListenersToSite() {
 function AddEventListenersNavigation() {
     // Navbar Mobile Burger Menu Toggle
     $('#nav_burger').on('click', function () {
-        $('#nav_burger').toggleClass('is-active');
-        $(".navbar-menu").toggleClass("is-active");
+        $(this).toggleClass('is-active');
+        $('.navbar-menu').toggleClass('is-active');
     });
 
     // Main Links - Images
@@ -798,22 +734,16 @@ function AddEventListenersNavigation() {
 
     // Blur Images Button
     $('#blur-thumbs').on('click', function () {
-        if (BLUR_THUMBNAILS) {
-            BLUR_THUMBNAILS = false;
-            $(this).removeClass('is-success');
-            $(this).html('Blur: Off');
-            $('.gallery-image').removeClass('thumb-blur');
-        } else if (!BLUR_THUMBNAILS) {
-            BLUR_THUMBNAILS = true;
-            $(this).addClass('is-success');
-            $(this).html('Blur: On');
-            $('.gallery-image').addClass('thumb-blur');
-        }
+        BLUR_THUMBNAILS = !BLUR_THUMBNAILS;
+        $(this)
+            .toggleClass('is-success', BLUR_THUMBNAILS)
+            .text(BLUR_THUMBNAILS ? 'Blur: On' : 'Blur: Off');
+        $('.gallery-image').toggleClass('thumb-blur', BLUR_THUMBNAILS);
     });
 
     // Items Per-Page
     $('#items-per-page').on('change', function () {
-        ITEMS_PER_PAGE = $(this).val();
+        ITEMS_PER_PAGE = parseInt($(this).val(), 10);
         CURRENT_PAGE = 1;
         RenderPageGallery();
     });
@@ -821,10 +751,10 @@ function AddEventListenersNavigation() {
     // Search Items with Tags
     $('#search-tags').on('click', function () {
         const searchTags = $('#nav_search_tags').val().split(',');
-        CURRENT_TAGS = searchTags.map(tag => tag.trim());
+        CURRENT_TAGS = searchTags.map(tag => tag.trim()).filter(Boolean);
         CURRENT_PAGE = 1;
-        $(this).toggleClass('is-hidden');
-        $('#reset-tags').toggleClass('is-hidden');
+        $(this).addClass('is-hidden');
+        $('#reset-tags').removeClass('is-hidden');
         RenderPageGallery();
     });
 
@@ -833,8 +763,8 @@ function AddEventListenersNavigation() {
         $('#nav_search_tags').val('');
         CURRENT_TAGS = [];
         CURRENT_PAGE = 1;
-        $(this).toggleClass('is-hidden');
-        $('#search-tags').toggleClass('is-hidden');
+        $(this).addClass('is-hidden');
+        $('#search-tags').removeClass('is-hidden');
         RenderPageGallery();
     });
 }
@@ -844,14 +774,14 @@ function AddEventListenersNavigation() {
  * @description Binds the gallery links to their respective functions.
  */
 function AddEventListenersGallery() {
-    // Tag Links
-    $('.link-tags-page').on('click', function (event) {
+    // Tag Links - unbind first to prevent accumulation
+    $('.link-tags-page').off('click').on('click', function (event) {
         event.stopImmediatePropagation();
         const itemID = $(this).data('id');
         const itemHash = $(this).data('hash');
         const itemURL = $(`#item-full-${itemID}`).prop('href');
         ClearPages();
-        RenderPageMediaTags(itemID, itemURL, itemHash);       
+        RenderPageMediaTags(itemID, itemURL, itemHash);
     });
 }
 
@@ -860,24 +790,24 @@ function AddEventListenersGallery() {
  * @description Binds the pagination links to their respective functions.
  */
 function AddEventListenersGalleryPagination() {
-    // Pagination Links
-    $('.pagination-link').on('click', function () {
+    // Pagination Links - unbind first to prevent accumulation
+    $('.pagination-link').off('click').on('click', function () {
         CURRENT_PAGE = $(this).data('page');
         RenderPageGallery();
     });
 
-    // Pagination - Nest
-    $('.pagination-next').on('click', function () {
-        if ($(this).hasClass('is-disabled') === false) {
-            CURRENT_PAGE = CURRENT_PAGE + 1;
+    // Pagination - Next
+    $('.pagination-next').off('click').on('click', function () {
+        if (!$(this).hasClass('is-disabled')) {
+            CURRENT_PAGE++;
             RenderPageGallery();
         }
     });
 
     // Pagination - Previous
-    $('.pagination-previous').on('click', function () {
-        if ($(this).hasClass('is-disabled') === false) {
-            CURRENT_PAGE = CURRENT_PAGE - 1;
+    $('.pagination-previous').off('click').on('click', function () {
+        if (!$(this).hasClass('is-disabled')) {
+            CURRENT_PAGE--;
             RenderPageGallery();
         }
     });
@@ -888,11 +818,9 @@ function AddEventListenersGalleryPagination() {
  * @description Binds the tag links to their respective functions.
  */
 function AddEventListenersMediaTags() {
-    // Tag Back - Back to Gallery
-    $('#back-to-gallery').on('click', function (event) {
-        // Prevent repeated calls
+    // Tag Back - Back to Gallery - unbind first to prevent accumulation
+    $('#back-to-gallery').off('click').on('click', function (event) {
         event.stopImmediatePropagation();
-
         SHOWING_MEDIA_TAGS = false;
         MEDIA_ID = null;
         ClearPages();
@@ -900,53 +828,40 @@ function AddEventListenersMediaTags() {
     });
 
     // Tag Category Shortcode Help Modal
-    $('#help-shortcode').on('click', function (event) {
-        // Prevent repeated calls
+    $('#help-shortcode').off('click').on('click', function (event) {
         event.stopImmediatePropagation();
-
         OpenModal('help-modal-shortcodes');
     });
 
     // Tag List - Enter Key
-    $('#add_tag').on('keyup', function (event) {
-        // Prevent repeated calls
+    $('#add_tag').off('keyup').on('keyup', function (event) {
         event.stopImmediatePropagation();
-
         if (event.key === 'Enter') {
             AddTagsToMedia();
         }
     });
 
     // Add Tags - Button
-    $('#add-tags').on('click', function (event) {
-        // Prevent repeated calls
+    $('#add-tags').off('click').on('click', function (event) {
         event.stopImmediatePropagation();
-
         AddTagsToMedia();
     });
 
     // Tags - Remove Tag "X"
-    $('.media-tag').find('.delete').on('click', function (event) {
-        // Prevent repeated calls
+    $('.media-tag').find('.delete').off('click').on('click', function (event) {
         event.stopImmediatePropagation();
-
-        // Get the tag ID
         const tagID = $(this).data('id');
-
-        // Confirm we want to remove
         if (confirm('Are you sure you want to remove this tag?')) {
-            // Remove the tag
             RemoveTagFromMedia(tagID);
         }
     });
 }
 
 /**
- * @function AddEventListenersTagsList
+ * @function AddEventListenersToTagsList
  * @description Binds the tag list page items to their respective functions.
  */
 function AddEventListenersToTagsList() {
-    // Get Elements
     const formHeader = $('#tag-list-new-tag-form-header');
     const tagNameInput = $('#new_tag_tag_name');
     const tagCategorySelect = $('#new_tag_category_select');
@@ -954,80 +869,58 @@ function AddEventListenersToTagsList() {
     const tagSubmitButton = $('#new_tag_btn_submit');
     const tagResetButton = $('#new_tag_btn_reset');
     const helpText = $('#new_tag_tag_name_help');
-    const tagTable = $('#tag-list-page-table');
-
-    // Get the DataTable
-    const tagTableDataTable = tagTable.DataTable();
+    const tagTableDataTable = $('#tag-list-page-table').DataTable();
 
     // Double-Click to Edit Tag
     $('#tag-list-page-table tbody').on('dblclick', 'tr', function () {
-        // Get the row data from the DataTable
         const rowData = tagTableDataTable.row(this).data();
-
-        // Set the tag id of the tag being edited.
         tagEditID.val(rowData.tag_id);
-
-        // Set the other values
         tagNameInput.val(rowData.tag_name);
         tagCategorySelect.val(rowData.category_id);
-
-        // Set the help text and other indicators you are editing
-        formHeader.html('Edit Tag Form');
-        tagNameInput.addClass('is-warning');
-        tagNameInput.removeClass('is-success is-danger');
-        helpText.html(`You are currently editing the tag:<br/>${rowData.tag_name}`);
-        helpText.addClass('is-warning');
-        helpText.removeClass('is-hidden is-success is-danger');
+        formHeader.text('Edit Tag Form');
+        tagNameInput.addClass('is-warning').removeClass('is-success is-danger');
+        helpText.html(`You are currently editing the tag:<br/>${rowData.tag_name}`)
+            .addClass('is-warning')
+            .removeClass('is-hidden is-success is-danger');
     });
 
     // New Tag Name - Keyup Check Existing
     tagNameInput.on('keyup', function (event) {
-        // Get the current tag info
         const tagName = tagNameInput.val();
 
-        // Get the existing tags from the DataTable
-        const existingTags = tagTableDataTable.column(1).data().toArray();
-
-        // Do not trigger on enter
-        if (event.key !== 'Enter') {
-
-            // If we are editing, ignore all of this
-            if (tagEditID.val() !== '') {
-                return;
-            }
-
-            // Check if the tag name already exists
-            if (existingTags.includes(tagName)) {
-                tagNameInput.addClass('is-danger');
-                tagNameInput.removeClass('is-success');
-                helpText.html('Tag already exists.');
-                helpText.addClass('is-danger');
-                helpText.removeClass('is-hidden is-success');
-            } else if (tagName.length > 0) {
-                tagNameInput.addClass('is-success');
-                tagNameInput.removeClass('is-danger');
-                helpText.html('Tag is available.');
-                helpText.addClass('is-success');
-                helpText.removeClass('is-hidden is-danger');
-            } else {
-                tagNameInput.removeClass('is-danger is-success');
-                helpText.html('');
-                helpText.addClass('is-hidden');
-                helpText.removeClass('is-danger is-success');
-            }
-        } else {
-            // Check if we are editing or adding a new tag
+        if (event.key === 'Enter') {
             if (tagEditID.val() !== '') {
                 EditExistingTag();
             } else {
                 AddNewTag();
             }
+            return;
+        }
+
+        // If we are editing, ignore validation
+        if (tagEditID.val() !== '') return;
+
+        // Get the existing tags from the DataTable
+        const existingTags = tagTableDataTable.column(1).data().toArray();
+
+        if (existingTags.includes(tagName)) {
+            tagNameInput.addClass('is-danger').removeClass('is-success');
+            helpText.text('Tag already exists.')
+                .addClass('is-danger')
+                .removeClass('is-hidden is-success');
+        } else if (tagName.length > 0) {
+            tagNameInput.addClass('is-success').removeClass('is-danger');
+            helpText.text('Tag is available.')
+                .addClass('is-success')
+                .removeClass('is-hidden is-danger');
+        } else {
+            tagNameInput.removeClass('is-danger is-success');
+            helpText.text('').addClass('is-hidden').removeClass('is-danger is-success');
         }
     });
 
     // New Tag - Submit Button
     tagSubmitButton.on('click', function () {
-        // Check if we are editing or adding a new tag
         if (tagEditID.val() !== '') {
             EditExistingTag();
         } else {
@@ -1037,20 +930,29 @@ function AddEventListenersToTagsList() {
 
     // New Tag - Reset Button
     tagResetButton.on('click', function () {
-        // Reset Header
-        formHeader.html('New Tag Form');
-
-        // Clear the inputs
-        tagNameInput.val('');
-        tagNameInput.removeClass('is-danger is-success is-warning');
-        tagCategorySelect.prop('selectedIndex', 0);
-        tagEditID.val('');
-
-        // Clear the help text
-        helpText.html('');
-        helpText.addClass('is-hidden');
-        helpText.removeClass('is-danger is-success is-warning');
+        ResetTagForm(formHeader, tagNameInput, tagCategorySelect, tagEditID, helpText);
     });
+}
+
+// ============================================================
+// Tag Form Operations
+// ============================================================
+
+/**
+ * @function ResetTagForm
+ * @description Resets the tag form fields and help text to their default state.
+ * @param {jQuery} formHeader
+ * @param {jQuery} tagNameInput
+ * @param {jQuery} tagCategorySelect
+ * @param {jQuery} tagEditID
+ * @param {jQuery} helpText
+ */
+function ResetTagForm(formHeader, tagNameInput, tagCategorySelect, tagEditID, helpText) {
+    formHeader.text('New Tag Form');
+    tagNameInput.val('').removeClass('is-danger is-success is-warning');
+    tagCategorySelect.prop('selectedIndex', 0);
+    tagEditID.val('');
+    helpText.text('').addClass('is-hidden').removeClass('is-danger is-success is-warning');
 }
 
 /**
@@ -1058,41 +960,24 @@ function AddEventListenersToTagsList() {
  * @description Adds a new tag to the database and refreshes the tag list.
  */
 function AddNewTag() {
-    // Get Elements
     const tagNameInput = $('#new_tag_tag_name');
     const tagCategorySelect = $('#new_tag_category_select');
     const helpText = $('#new_tag_tag_name_help');
     const tagTable = $('#tag-list-page-table').DataTable();
-
-    // Get the current tag info
     const tagName = tagNameInput.val();
     const tagCategory = tagCategorySelect.val();
-
-    // Get the existing tags from the DataTable
     const existingTags = tagTable.column(1).data().toArray();
 
-    // Check if the tag name is valid
-    if (tagName.length > 0 && existingTags.includes(tagName) === false) {
+    if (tagName.length > 0 && !existingTags.includes(tagName)) {
         addTag(tagName, tagCategory).then(() => {
-            // Clear the input
-            tagNameInput.val('');
-            tagNameInput.removeClass('is-danger is-success');
+            tagNameInput.val('').removeClass('is-danger is-success');
             tagCategorySelect.prop('selectedIndex', 0);
-
-            // Clear the help text
-            helpText.html('');
-            helpText.addClass('is-hidden');
-            helpText.removeClass('is-danger is-success');
-
-            // Refresh the tags list
+            helpText.text('').addClass('is-hidden').removeClass('is-danger is-success');
             RefreshTags();
-
-            // Refresh the DataTable
             tagTable.ajax.reload();
         });
     } else {
-        helpText.html('You cannot submit an empty tag or a tag that already exists.');
-        helpText.addClass('is-danger');
+        helpText.text('You cannot submit an empty tag or a tag that already exists.').addClass('is-danger');
         tagNameInput.addClass('is-danger');
     }
 }
@@ -1102,7 +987,6 @@ function AddNewTag() {
  * @description Edits an existing tag in the database and refreshes the tag list.
  */
 function EditExistingTag() {
-    // Get Elements
     const formHeader = $('#tag-list-new-tag-form-header');
     const tagEditID = $('#new_tag_edit_id');
     const tagNameInput = $('#new_tag_tag_name');
@@ -1110,32 +994,14 @@ function EditExistingTag() {
     const helpText = $('#new_tag_tag_name_help');
     const tagTable = $('#tag-list-page-table').DataTable();
 
-    // Get the new tag info
     const tagID = tagEditID.val();
     const tagName = tagNameInput.val();
     const tagCategory = tagCategorySelect.val();
 
-    // Check or valid tag name
     if (tagName.length > 0) {
         editTag(tagID, tagName, tagCategory).then(() => {
-            // Reset the Header
-            formHeader.html('New Tag Form');
-
-            // Clear the input
-            tagNameInput.val('');
-            tagNameInput.removeClass('is-danger is-success is-warning');
-            tagCategorySelect.prop('selectedIndex', 0);
-            tagEditID.val('');
-
-            // Clear the help text
-            helpText.html('');
-            helpText.addClass('is-hidden');
-            helpText.removeClass('is-danger is-success is-warning');
-
-            // Refresh the tags list
+            ResetTagForm(formHeader, tagNameInput, tagCategorySelect, tagEditID, helpText);
             RefreshTags();
-
-            // Refresh the DataTable
             tagTable.ajax.reload();
         });
     } else {
@@ -1143,103 +1009,71 @@ function EditExistingTag() {
     }
 }
 
+// ============================================================
+// Media Tag Operations
+// ============================================================
+
 /**
  * @function AddTagsToMedia
  * @description Adds tags to the media item currently being viewed.
  */
 function AddTagsToMedia() {
-    // Get the tags from the input
     const tagsInput = $('#add_tag');
     const tags = tagsInput.val();
+    const { itemID, itemURL, itemHash } = getActiveMediaInfo();
 
-    // Initialize variables
-    let itemID, itemURL;
-
-    // Check page type and set itemID and itemURL accordingly
-    if (PAGE_TYPE === PAGE_IMAGES) {
-        itemID = $('#tag-image').data('id');
-        itemURL = $('#tag-image').prop('src');
-    } else if (PAGE_TYPE === PAGE_VIDEOS) {
-        itemID = $('#tag-video').data('id');
-        itemURL = $('#tag-video').prop('src');
-    }
-
-    // Set item MD5 hash
-    const itemHash = $('#hash-display').html().replace('MD5 Hash: ', '');
-
-    // Add the tags to the item
     addTagsToItem(itemID, tags).then(() => {
-        // Clear existing tags
         $('#tag-list').empty();
-
-        // Get the new tags
         RenderPageMediaTags(itemID, itemURL, itemHash);
-
-        // Refresh Tag List Globally in case of new tags
         RefreshTags();
     });
 
-    // Clear Tags Input
     tagsInput.val('');
 }
 
 /**
  * @function RemoveTagFromMedia
  * @description Removes a tag from the media item currently being viewed.
- * @param {number} tagID 
+ * @param {number} tagID
  */
 function RemoveTagFromMedia(tagID) {
-    // Initialize variables
-    let itemID, itemURL;
-
-    // Check page type and set itemID and itemURL accordingly
-    if (PAGE_TYPE === PAGE_IMAGES) {
-        itemID = $('#tag-image').data('id');
-        itemURL = $('#tag-image').prop('src');
-    } else if (PAGE_TYPE === PAGE_VIDEOS) {
-        itemID = $('#tag-video').data('id');
-        itemURL = $('#tag-video').prop('src');
-    }
-
-    // Set item MD5 hash
-    const itemHash = $('#hash-display').html().replace('MD5 Hash: ', '');
+    const { itemID, itemURL, itemHash } = getActiveMediaInfo();
 
     removeTagFromItem(itemID, tagID).then(() => {
-        // Clear existing tags
         $('#tag-list').empty();
-
-        // Get the new tags
         RenderPageMediaTags(itemID, itemURL, itemHash);
     });
 }
 
+// ============================================================
+// Modal Helpers
+// ============================================================
+
 /**
  * @function OpenModal
- * @description Opens a modal with the specified name.
- * @param {string} modalID 
+ * @description Opens a modal with the specified ID.
+ * @param {string} modalID
  */
 function OpenModal(modalID) {
-    const modal = $(`#${modalID}`);
-    modal.addClass('is-active');
+    $(`#${modalID}`).addClass('is-active');
 }
 
 /**
  * @function CloseModal
- * @description Opens a modal with the specified name.
- * @param {string} modalID 
+ * @description Closes a specific modal by ID, or all modals if no ID is provided.
+ * @param {string} [modalID=null]
  */
 function CloseModal(modalID = null) {
-    let modal, modals;
-    if (modalID !== null) {
-        modal = $(`#${modalID}`);
-        modal.removeClass('is-active');
+    if (modalID !== null && typeof modalID === 'string') {
+        $(`#${modalID}`).removeClass('is-active');
     } else {
-        modals = $('.modal');
-        modals.each(function () {
-            $(this).removeClass('is-active');
-        });
+        $('.modal').removeClass('is-active');
     }
 }
+
+// ============================================================
+// UI State Setters
+// ============================================================
 
 /**
  * @function RefreshTags
@@ -1247,7 +1081,7 @@ function CloseModal(modalID = null) {
  */
 function RefreshTags() {
     getTags().then((tags) => {
-        ALL_TAGS = tags;
+        ALL_TAGS = tags || [];
         setTagList(ALL_TAGS);
     });
 }
@@ -1257,63 +1091,56 @@ function RefreshTags() {
  * @description Sets the page title based on the current page type (images or videos).
  */
 function setPageTitle() {
-    let title;
+    const titleSuffix = {
+        [PAGE_IMAGES]: 'Images',
+        [PAGE_VIDEOS]: 'Videos',
+        [PAGE_TAGS]:   'Tags'
+    };
 
-    if (PAGE_TYPE === PAGE_VIDEOS) {
-        title = `${PAGE_TITLE} - Videos`;
-    } else if (PAGE_TYPE === PAGE_IMAGES) {
-        title = `${PAGE_TITLE} - Images`;
-    } else if (PAGE_TYPE === PAGE_TAGS) {
-        title = `${PAGE_TITLE} - Tags`;
-    } else {
-        title = PAGE_TITLE;
-    }
+    const title = titleSuffix[PAGE_TYPE]
+        ? `${PAGE_TITLE} - ${titleSuffix[PAGE_TYPE]}`
+        : PAGE_TITLE;
 
-    // Set Title
     document.title = title;
-    $('#gallery-title').html(title);
+    $('#gallery-title').text(title);
 }
 
 /**
  * @function setTagList
- * @description Sets the tag list for the datalist elements.
- * @param {Array} tagsList 
+ * @description Sets the tag list for the datalist elements using DocumentFragment for efficiency.
+ * @param {Array} tagsList
  */
 function setTagList(tagsList) {
-    const tagLists = $('.datalist-for-tags');
+    $('.datalist-for-tags').each(function () {
+        const datalist = $(this);
+        datalist.empty();
 
-    // Setup the Tag Lists
-    tagLists.each(function () {
-        // Empty the list
-        $(this).empty();
-
-        // Add the Tags
+        // Build all options in a fragment, then append once
+        const fragment = document.createDocumentFragment();
         tagsList.forEach(tag => {
-            const datalistOption = document.createElement('option');
-            datalistOption.setAttribute('value', tag.tag_name);
-            $(this).append(datalistOption);
+            const option = document.createElement('option');
+            option.value = tag.tag_name;
+            fragment.appendChild(option);
         });
+        datalist.append(fragment);
     });
 }
+
+// ============================================================
+// API Functions
+// ============================================================
 
 /**
  * @function getPageTitle
  * @description Fetches the page title from the API.
  * @async
- * @throws {Error} If there is an error fetching the page title.
- * @returns {Promise} A promise that resolves to the page title.
+ * @returns {Promise<string>} A promise that resolves to the page title.
  */
 async function getPageTitle() {
-    const apiLink = `${API_BASE_URL}/config/title/`;
-
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
-    }
-    catch (error){
-        console.error(`Error fetching page title: ${error}`);
+        return await fetchApi(`${API_BASE_URL}/config/title/`);
+    } catch (error) {
+        console.error('Error fetching page title:', error);
     }
 }
 
@@ -1321,39 +1148,25 @@ async function getPageTitle() {
  * @function getTags
  * @description Fetches the tags from the API.
  * @async
- * @throws {Error} If there is an error fetching the tags.
- * @returns {Promise} A promise that resolves to the tags.
+ * @returns {Promise<Array>} A promise that resolves to the tags.
  */
 async function getTags() {
-    const apiLink = `${API_BASE_URL}/tags/all/`;
-
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(`${API_BASE_URL}/tags/all/`);
     } catch (error) {
         console.error('Error fetching tags:', error);
     }
 }
 
-
-
 /**
  * @function getTotalImages
  * @description Fetches the total number of images from the API.
  * @async
- * @throws {Error} If there is an error fetching the total number of images.
- * @returns {Promise} A promise that resolves to the total number of images.
+ * @returns {Promise<number>} A promise that resolves to the total number of images.
  */
 async function getTotalImages() {
-    const apiLink = `${API_BASE_URL}/images/total/`;
-
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(`${API_BASE_URL}/images/total/`);
     } catch (error) {
         console.error('Error fetching total images:', error);
     }
@@ -1363,17 +1176,11 @@ async function getTotalImages() {
  * @function getTotalVideos
  * @description Fetches the total number of videos from the API.
  * @async
- * @throws {Error} If there is an error fetching the total number of videos.
- * @returns {Promise} A promise that resolves to the total number of videos.
+ * @returns {Promise<number>} A promise that resolves to the total number of videos.
  */
 async function getTotalVideos() {
-    const apiLink = `${API_BASE_URL}/videos/total/`;
-
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(`${API_BASE_URL}/videos/total/`);
     } catch (error) {
         console.error('Error fetching total videos:', error);
     }
@@ -1383,23 +1190,15 @@ async function getTotalVideos() {
  * @function getTotalImagePages
  * @description Fetches the total number of image pages from the API.
  * @async
- * @throws {Error} If there is an error fetching the total number of image pages.
- * @returns {Promise} A promise that resolves to the total number of image pages.
+ * @returns {Promise<number>} A promise that resolves to the total number of image pages.
  */
 async function getTotalImagePages() {
-    let apiLink;
-
-    if (CURRENT_TAGS.length > 0) {
-        apiLink = `${API_BASE_URL}/pages/images/with-tags/${CURRENT_TAGS.join()}/${ITEMS_PER_PAGE}/`;
-    } else {
-        apiLink = `${API_BASE_URL}/pages/images/${ITEMS_PER_PAGE}/`;
-    }
+    const tagsSegment = CURRENT_TAGS.length > 0
+        ? `/with-tags/${encodeURIComponent(CURRENT_TAGS.join())}`
+        : '';
 
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(`${API_BASE_URL}/pages/images${tagsSegment}/${ITEMS_PER_PAGE}/`);
     } catch (error) {
         console.error('Error fetching total image pages:', error);
     }
@@ -1409,23 +1208,15 @@ async function getTotalImagePages() {
  * @function getTotalVideoPages
  * @description Fetches the total number of video pages from the API.
  * @async
- * @throws {Error} If there is an error fetching the total number of video pages.
- * @returns {Promise} A promise that resolves to the total number of video pages.
+ * @returns {Promise<number>} A promise that resolves to the total number of video pages.
  */
 async function getTotalVideoPages() {
-    let apiLink;
-
-    if (CURRENT_TAGS.length > 0) {
-        apiLink = `${API_BASE_URL}/pages/videos/with-tags/${CURRENT_TAGS.join()}/${ITEMS_PER_PAGE}/`;
-    } else {
-        apiLink = `${API_BASE_URL}/pages/videos/${ITEMS_PER_PAGE}/`;
-    }
+    const tagsSegment = CURRENT_TAGS.length > 0
+        ? `/with-tags/${encodeURIComponent(CURRENT_TAGS.join())}`
+        : '';
 
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(`${API_BASE_URL}/pages/videos${tagsSegment}/${ITEMS_PER_PAGE}/`);
     } catch (error) {
         console.error('Error fetching total video pages:', error);
     }
@@ -1436,23 +1227,15 @@ async function getTotalVideoPages() {
  * @description Fetches the images for a specific page from the API.
  * @async
  * @param {number} page The page number to fetch images for.
- * @throws {Error} If there is an error fetching the images for the page.
- * @returns {Promise} A promise that resolves to the images for the page.
+ * @returns {Promise<Array>} A promise that resolves to the images for the page.
  */
 async function getImagesForPage(page) {
-    let apiLink;
-
-    if (CURRENT_TAGS.length > 0) {
-        apiLink = `${API_BASE_URL}/images/with-tags/${CURRENT_TAGS.join()}/${CURRENT_PAGE}/${ITEMS_PER_PAGE}/`;
-    } else {
-        apiLink = `${API_BASE_URL}/images/page/${page}/${ITEMS_PER_PAGE}/`;
-    }
+    const apiLink = CURRENT_TAGS.length > 0
+        ? `${API_BASE_URL}/images/with-tags/${encodeURIComponent(CURRENT_TAGS.join())}/${page}/${ITEMS_PER_PAGE}/`
+        : `${API_BASE_URL}/images/page/${page}/${ITEMS_PER_PAGE}/`;
 
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(apiLink);
     } catch (error) {
         console.error('Error fetching images:', error);
     }
@@ -1463,23 +1246,15 @@ async function getImagesForPage(page) {
  * @description Fetches the videos for a specific page from the API.
  * @async
  * @param {number} page The page number to fetch videos for.
- * @throws {Error} If there is an error fetching the videos for the page.
- * @returns {Promise} A promise that resolves to the videos for the page.
+ * @returns {Promise<Array>} A promise that resolves to the videos for the page.
  */
 async function getVideosForPage(page) {
-    let apiLink;
-
-    if (CURRENT_TAGS.length > 0) {
-        apiLink = `${API_BASE_URL}/videos/with-tags/${CURRENT_TAGS.join()}/${CURRENT_PAGE}/${ITEMS_PER_PAGE}/`;
-    } else {
-        apiLink = `${API_BASE_URL}/videos/page/${page}/${ITEMS_PER_PAGE}/`;
-    }
+    const apiLink = CURRENT_TAGS.length > 0
+        ? `${API_BASE_URL}/videos/with-tags/${encodeURIComponent(CURRENT_TAGS.join())}/${page}/${ITEMS_PER_PAGE}/`
+        : `${API_BASE_URL}/videos/page/${page}/${ITEMS_PER_PAGE}/`;
 
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(apiLink);
     } catch (error) {
         console.error('Error fetching videos:', error);
     }
@@ -1490,23 +1265,13 @@ async function getVideosForPage(page) {
  * @description Fetches the tags for a specific image or video from the API.
  * @async
  * @param {number} itemID The ID of the image or video to fetch tags for.
- * @throws {Error} If there is an error fetching the tags for the item.
- * @returns {Promise} A promise that resolves to the tags for the item.
+ * @returns {Promise<Array>} A promise that resolves to the tags for the item.
  */
 async function getTagsForItem(itemID) {
-    let apiLink;
-
-    if (PAGE_TYPE === PAGE_IMAGES) {
-        apiLink = `${API_BASE_URL}/tags/for/image/${itemID}/`;
-    } else if (PAGE_TYPE === PAGE_VIDEOS) {
-        apiLink = `${API_BASE_URL}/tags/for/video/${itemID}/`;
-    }
+    const mediaType = PAGE_TYPE === PAGE_IMAGES ? 'image' : 'video';
 
     try {
-        const response = await fetch(apiLink)
-        const data = await response.json();
-
-        return data;
+        return await fetchApi(`${API_BASE_URL}/tags/for/${mediaType}/${itemID}/`);
     } catch (error) {
         console.error('Error fetching tags for item:', error);
     }
@@ -1516,32 +1281,19 @@ async function getTagsForItem(itemID) {
  * @function addTagsToItem
  * @description Adds tags to a specific image or video.
  * @async
- * @param {number} itemID 
- * @param {string} tags 
- * @returns {Promise} A promise that resolves to the updated tags for the item.
+ * @param {number} itemID
+ * @param {string} tags
+ * @returns {Promise<*>} A promise that resolves to the updated tags for the item.
  */
 async function addTagsToItem(itemID, tags) {
-    let apiLink;
-
-    if (PAGE_TYPE === PAGE_IMAGES) {
-        apiLink = `${API_BASE_URL}/tags/image/add/`;
-    } else if (PAGE_TYPE === PAGE_VIDEOS) {
-        apiLink = `${API_BASE_URL}/tags/video/add/`;
-    }
-
-    const myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
+    const mediaType = PAGE_TYPE === PAGE_IMAGES ? 'image' : 'video';
 
     try {
-        const response = await fetch(apiLink, {
+        return await fetchApi(`${API_BASE_URL}/tags/${mediaType}/add/`, {
             method: 'PATCH',
-            body: JSON.stringify({'item_id': itemID, 'tag_list': tags}),
-            headers: myHeaders,
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ item_id: itemID, tag_list: tags })
         });
-
-        const data = await response.json();
-
-        return data;
     } catch (error) {
         console.error('Error adding tags to item:', error);
     }
@@ -1551,32 +1303,19 @@ async function addTagsToItem(itemID, tags) {
  * @function removeTagFromItem
  * @description Removes a tag from a specific image or video.
  * @async
- * @param {number} itemID 
- * @param {number} tagID 
- * @returns {Promise} A promise that resolves to the updated tags for the item.
+ * @param {number} itemID
+ * @param {number} tagID
+ * @returns {Promise<*>} A promise that resolves to the updated tags for the item.
  */
 async function removeTagFromItem(itemID, tagID) {
-    let apiLink;
-
-    if (PAGE_TYPE === PAGE_IMAGES) {
-        apiLink = `${API_BASE_URL}/tags/image/remove/`;
-    } else if (PAGE_TYPE === PAGE_VIDEOS) {
-        apiLink = `${API_BASE_URL}/tags/video/remove/`;
-    }
-
-    const myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
+    const mediaType = PAGE_TYPE === PAGE_IMAGES ? 'image' : 'video';
 
     try {
-        const response = await fetch(apiLink, {
+        return await fetchApi(`${API_BASE_URL}/tags/${mediaType}/remove/`, {
             method: 'PATCH',
-            body: JSON.stringify({'item_id': itemID, 'tag_id': tagID}),
-            headers: myHeaders,
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ item_id: itemID, tag_id: tagID })
         });
-
-        const data = await response.json();
-
-        return data;
     } catch (error) {
         console.error('Error removing tag from item:', error);
     }
@@ -1588,24 +1327,15 @@ async function removeTagFromItem(itemID, tagID) {
  * @async
  * @param {string} tagName The name of the tag to add.
  * @param {number} tagCategory The category ID of the tag.
- * @returns {Promise} A promise that resolves to true on success.
+ * @returns {Promise<*>} A promise that resolves to true on success.
  */
 async function addTag(tagName, tagCategory) {
-    const apiLink = `${API_BASE_URL}/tags/add/`;
-
-    const myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-
     try {
-        const response = await fetch(apiLink, {
+        return await fetchApi(`${API_BASE_URL}/tags/add/`, {
             method: 'POST',
-            body: JSON.stringify({'tag_name': tagName, 'category_id': tagCategory}),
-            headers: myHeaders,
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ tag_name: tagName, category_id: tagCategory })
         });
-
-        const data = await response.json();
-
-        return data;
     } catch (error) {
         console.error('Error adding tag:', error);
     }
@@ -1618,24 +1348,15 @@ async function addTag(tagName, tagCategory) {
  * @param {number} tagID The ID of the tag to edit.
  * @param {string} tagName The new name of the tag.
  * @param {number} tagCategory The new category ID of the tag.
- * @returns {Promise} A promise that resolves to true on success.
+ * @returns {Promise<*>} A promise that resolves to true on success.
  */
 async function editTag(tagID, tagName, tagCategory) {
-    const apiLink = `${API_BASE_URL}/tags/edit/${tagID}/`;
-
-    const myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-
     try {
-        const response = await fetch(apiLink, {
+        return await fetchApi(`${API_BASE_URL}/tags/edit/${tagID}/`, {
             method: 'PUT',
-            body: JSON.stringify({'tag_name': tagName, 'category_id': tagCategory}),
-            headers: myHeaders,
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ tag_name: tagName, category_id: tagCategory })
         });
-
-        const data = await response.json();
-
-        return data;
     } catch (error) {
         console.error('Error editing tag:', error);
     }
