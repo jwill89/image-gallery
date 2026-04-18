@@ -1,15 +1,18 @@
 <?php
 
-// Debugging
+// Error logging (log to file, don't display)
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
 // Autoloader
 require('vendor/autoload.php');
 
 // DB and Image functions
-use Gallery\Collection\{ImageCollection, VideoCollection};
-use Gallery\Structure\{Image, Video};
+use Gallery\Collection\ImageCollection;
+use Gallery\Collection\VideoCollection;
+use Gallery\Structure\Image;
+use Gallery\Structure\Video;
 
 // Set Time Limit for Script, 10 minutes
 set_time_limit(600);
@@ -63,12 +66,11 @@ $videos_added = 0;
 $videos_removed = 0;
 $videos_not_added = 0;
 
-// Initialize Hash Arrays
+// Initialize Hash Maps (associative arrays for O(1) lookup instead of in_array)
 $image_hashes = [];
 $video_hashes = [];
 
 // Remove images from the database that do not exist in the images folder
-/** @var Image $img */
 foreach ($images_in_database as $img) {
     if (!file_exists($image_dir_full . $img->getFileName())) {
         // Delete from DB
@@ -76,13 +78,12 @@ foreach ($images_in_database as $img) {
             $images_removed++;
         }
     } else {
-        // Image Exists, add it to our hash array
-        $image_hashes[] = $img->getHash();
+        // Image Exists, add it to our hash map
+        $image_hashes[$img->getHash()] = true;
     }
 }
 
 // Remove videos from the database that do not exist in the videos folder
-/** @var Video $vid */
 foreach ($videos_in_database as $vid) {
     if (!file_exists($video_dir_full . $vid->getFileName())) {
         // Delete from DB
@@ -90,8 +91,8 @@ foreach ($videos_in_database as $vid) {
             $videos_removed++;
         }
     } else {
-        // Image Exists, add it to our hash array
-        $video_hashes[] = $vid->getHash();
+        // Video Exists, add it to our hash map
+        $video_hashes[$vid->getHash()] = true;
     }
 }
 
@@ -101,7 +102,7 @@ foreach ($images_in_folder as $file_name) {
     $image_md5 = md5_file(ImageCollection::IMAGE_DIRECTORY . $file_name);
 
     // Make sure the file doesn't already exist, check by MD5. Image Hash not necessary *yet*
-    if (!in_array($image_md5, $image_hashes)) {
+    if (!isset($image_hashes[$image_md5])) {
         // Create the Image
         $image = new Image();
         $image->setFileName($file_name)
@@ -135,7 +136,7 @@ foreach ($videos_in_folder as $file_name) {
     $video_md5 = md5_file(VideoCollection::VIDEO_DIRECTORY . $file_name);
 
     // Make sure the file doesn't already exist, check by MD5. Video Hash not necessary *yet*
-    if (!in_array($video_md5, $video_hashes)) {
+    if (!isset($video_hashes[$video_md5])) {
         // Create a new video
         $video = new Video();
         $video->setFileName($file_name)
