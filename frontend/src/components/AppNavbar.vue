@@ -2,36 +2,36 @@
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useGalleryStore } from '../stores/gallery'
+import { useApi, hasAuthToken, clearAuthToken } from '../composables/useApi'
+import { useFavoritesStore } from '../stores/favorites'
+import { useToastStore } from '../stores/toast'
 import TagSearchInput from './TagSearchInput.vue'
 
 const router = useRouter()
 const route = useRoute()
 const store = useGalleryStore()
+const api = useApi()
+const favorites = useFavoritesStore()
+const toastStore = useToastStore()
 
 const burgerActive = ref(false)
 const selectedTags = ref<string[]>([])
 const perPage = ref(40)
+const authenticated = ref(hasAuthToken())
 
-const isImagesActive = computed(() => {
+const isMediaActive = computed(() => {
   const name = route.name as string
-  return name?.startsWith('images') ?? false
-})
-const isVideosActive = computed(() => {
-  const name = route.name as string
-  return name?.startsWith('videos') ?? false
+  return name === 'media' || name === 'media-with-tags'
 })
 const isTagsActive = computed(() => route.name === 'tags')
+const isUploadActive = computed(() => route.name === 'upload')
+const isFavoritesActive = computed(() => route.name === 'favorites')
 const isDupesActive = computed(() => route.name === 'duplicates')
+const isLoginActive = computed(() => route.name === 'login')
 
-function navigateImages() {
+function navigateMedia() {
   selectedTags.value = []
-  router.push({ name: 'images', params: { page: 1, perPage: perPage.value } })
-  burgerActive.value = false
-}
-
-function navigateVideos() {
-  selectedTags.value = []
-  router.push({ name: 'videos', params: { page: 1, perPage: perPage.value } })
+  router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
   burgerActive.value = false
 }
 
@@ -41,49 +41,106 @@ function navigateTags() {
   burgerActive.value = false
 }
 
+function navigateFavorites() {
+  selectedTags.value = []
+  router.push({ name: 'favorites' })
+  burgerActive.value = false
+}
+
+function navigateUpload() {
+  selectedTags.value = []
+  router.push({ name: 'upload' })
+  burgerActive.value = false
+}
+
 function navigateDupes() {
   selectedTags.value = []
   router.push({ name: 'duplicates' })
   burgerActive.value = false
 }
 
+async function navigateRandom() {
+  burgerActive.value = false
+  try {
+    if (store.totalMedia === 0) {
+      toastStore.info('The gallery is empty. Upload some media first.', 4000, 'No Media')
+      return
+    }
+    const item = await api.get<Record<string, unknown>>('/media/random/')
+
+    // Clear gallery context so arrow keys are disabled for random access
+    store.lastViewedItemIds = []
+    router.push({ name: 'media-tags', params: { id: item.media_id as number } })
+  } catch {
+    toastStore.error('Could not load a random media item. Please try again.', 6000, 'Random Failed')
+  }
+}
+
+function navigateLogin() {
+  router.push({ name: 'login' })
+  burgerActive.value = false
+}
+
+function logout() {
+  clearAuthToken()
+  authenticated.value = false
+  burgerActive.value = false
+}
+
 function searchWithTags() {
   if (selectedTags.value.length === 0) return
-  const mediaType = isVideosActive.value ? 'videos' : 'images'
   router.push({
-    name: `${mediaType}-with-tags`,
+    name: 'media-with-tags',
     params: { page: 1, perPage: perPage.value, tags: selectedTags.value.join(',') }
   })
 }
 
 function resetSearch() {
   selectedTags.value = []
-  const mediaType = isVideosActive.value ? 'videos' : 'images'
-  router.push({ name: mediaType, params: { page: 1, perPage: perPage.value } })
+  router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
 }
 
+function searchUntagged() {
+  selectedTags.value = []
+  router.push({
+    name: 'media-with-tags',
+    params: { page: 1, perPage: perPage.value, tags: 'untagged' }
+  })
+  burgerActive.value = false
+}
+
+const isUntaggedActive = computed(() => {
+  return route.params.tags === 'untagged'
+})
+
 function onPerPageChange() {
-  const mediaType = isVideosActive.value ? 'videos' : 'images'
-  if (selectedTags.value.length > 0) {
+  if (isUntaggedActive.value) {
     router.push({
-      name: `${mediaType}-with-tags`,
+      name: 'media-with-tags',
+      params: { page: 1, perPage: perPage.value, tags: 'untagged' }
+    })
+  } else if (selectedTags.value.length > 0) {
+    router.push({
+      name: 'media-with-tags',
       params: { page: 1, perPage: perPage.value, tags: selectedTags.value.join(',') }
     })
   } else {
-    router.push({ name: mediaType, params: { page: 1, perPage: perPage.value } })
+    router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
   }
 }
 
-// Sync from route on navigation
+// Sync auth state and route params on navigation
 router.afterEach((to) => {
-  if (to.params.tags) {
+  authenticated.value = hasAuthToken()
+  if (to.params.tags && to.params.tags !== 'untagged') {
     const tagsParam = to.params.tags as string
     selectedTags.value = tagsParam.split(',').map(t => t.trim()).filter(Boolean)
-  } else if (!to.name?.toString().includes('with-tags')) {
+  } else if (!to.name?.toString().includes('with-tags') || to.params.tags === 'untagged') {
     selectedTags.value = []
   }
-  if (to.params.perPage) {
-    perPage.value = Number(to.params.perPage) || 40
+  if (to.params.perPage != null && to.params.perPage !== '') {
+    const pp = Number(to.params.perPage)
+    perPage.value = isNaN(pp) ? 40 : pp
   }
 })
 </script>
@@ -105,10 +162,31 @@ router.afterEach((to) => {
 
     <div class="navbar-menu" :class="{ 'is-active': burgerActive }">
       <div class="navbar-start">
-        <a class="navbar-item" :class="{ 'is-selected': isImagesActive }" @click="navigateImages">Images</a>
-        <a class="navbar-item" :class="{ 'is-selected': isVideosActive }" @click="navigateVideos">Videos</a>
-        <a class="navbar-item" :class="{ 'is-selected': isTagsActive }" @click="navigateTags">Tags</a>
-        <a class="navbar-item" :class="{ 'is-selected': isDupesActive }" @click="navigateDupes">Duplicates</a>
+        <a class="navbar-item" :class="{ 'is-selected': isMediaActive }" @click="navigateMedia">
+          <span class="icon"><i class="fa-solid fa-images"></i></span>
+          <span>Media</span>
+        </a>
+        <a class="navbar-item" @click="navigateRandom">
+          <span class="icon"><i class="fa-solid fa-shuffle"></i></span>
+          <span>Random</span>
+        </a>
+        <a class="navbar-item" :class="{ 'is-selected': isTagsActive }" @click="navigateTags">
+          <span class="icon"><i class="fa-solid fa-tags"></i></span>
+          <span>Tags</span>
+        </a>
+        <a class="navbar-item" :class="{ 'is-selected': isFavoritesActive }" @click="navigateFavorites">
+          <span class="icon"><i class="fa-solid fa-heart"></i></span>
+          <span>Favorites</span>
+          <span v-if="favorites.count > 0" class="tag is-rounded is-small ml-1">{{ favorites.count }}</span>
+        </a>
+        <a v-if="authenticated" class="navbar-item" :class="{ 'is-selected': isUploadActive }" @click="navigateUpload">
+          <span class="icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+          <span>Upload</span>
+        </a>
+        <a v-if="authenticated" class="navbar-item" :class="{ 'is-selected': isDupesActive }" @click="navigateDupes">
+          <span class="icon"><i class="fa-solid fa-clone"></i></span>
+          <span>Duplicates</span>
+        </a>
       </div>
 
       <div class="navbar-end">
@@ -128,6 +206,7 @@ router.afterEach((to) => {
                   <option :value="40">40 Items Per-Page</option>
                   <option :value="60">60 Items Per-Page</option>
                   <option :value="100">100 Items Per-Page</option>
+                  <option :value="0">Infinite Scroll</option>
                 </select>
               </div>
               <div class="icon is-left">
@@ -138,14 +217,38 @@ router.afterEach((to) => {
         </div>
 
         <div class="navbar-item">
-          <TagSearchInput
-            v-model="selectedTags"
-            @search="searchWithTags"
-            @reset="resetSearch"
-          />
+          <div class="field has-addons">
+            <div class="control">
+              <TagSearchInput
+                v-model="selectedTags"
+                @search="searchWithTags"
+                @reset="resetSearch"
+              />
+            </div>
+            <div class="control">
+              <button
+                class="button"
+                :class="{ 'is-warning': isUntaggedActive }"
+                title="Show untagged media"
+                @click="searchUntagged"
+              >
+                <span class="icon"><i class="fa-solid fa-ban"></i></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="navbar-item">
+          <button v-if="authenticated" class="button is-danger is-outlined" @click="logout">
+            <span class="icon"><i class="fa-solid fa-right-from-bracket"></i></span>
+            <span>Logout</span>
+          </button>
+          <button v-else class="button is-primary is-outlined" :class="{ 'is-selected': isLoginActive }" @click="navigateLogin">
+            <span class="icon"><i class="fa-solid fa-right-to-bracket"></i></span>
+            <span>Admin Login</span>
+          </button>
         </div>
       </div>
     </div>
   </nav>
 </template>
-

@@ -5,71 +5,41 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/images/1/40'
+      redirect: '/media/1/40'
     },
     {
-      path: '/images/:page?/:perPage?',
-      name: 'images',
+      path: '/media/:page?/:perPage?',
+      name: 'media',
       component: () => import('../views/GalleryView.vue'),
-      meta: { title: 'Images' },
-      props: route => ({
-        mediaType: 'images',
-        page: Number(route.params.page) || 1,
-        perPage: Number(route.params.perPage) || 40
-      })
+      meta: { title: 'Media' },
+      props: route => {
+        const pp = Number(route.params.perPage)
+        return {
+          page: Number(route.params.page) || 1,
+          perPage: isNaN(pp) ? 40 : pp
+        }
+      }
     },
     {
-      path: '/images/:page/:perPage/with-tags/:tags',
-      name: 'images-with-tags',
+      path: '/media/:page/:perPage/with-tags/:tags',
+      name: 'media-with-tags',
       component: () => import('../views/GalleryView.vue'),
-      meta: { title: 'Images' },
-      props: route => ({
-        mediaType: 'images',
-        page: Number(route.params.page) || 1,
-        perPage: Number(route.params.perPage) || 40,
-        tags: route.params.tags as string
-      })
+      meta: { title: 'Media' },
+      props: route => {
+        const pp = Number(route.params.perPage)
+        return {
+          page: Number(route.params.page) || 1,
+          perPage: isNaN(pp) ? 40 : pp,
+          tags: route.params.tags as string
+        }
+      }
     },
     {
-      path: '/videos/:page?/:perPage?',
-      name: 'videos',
-      component: () => import('../views/GalleryView.vue'),
-      meta: { title: 'Videos' },
-      props: route => ({
-        mediaType: 'videos',
-        page: Number(route.params.page) || 1,
-        perPage: Number(route.params.perPage) || 40
-      })
-    },
-    {
-      path: '/videos/:page/:perPage/with-tags/:tags',
-      name: 'videos-with-tags',
-      component: () => import('../views/GalleryView.vue'),
-      meta: { title: 'Videos' },
-      props: route => ({
-        mediaType: 'videos',
-        page: Number(route.params.page) || 1,
-        perPage: Number(route.params.perPage) || 40,
-        tags: route.params.tags as string
-      })
-    },
-    {
-      path: '/images/:id/tags',
-      name: 'image-tags',
+      path: '/media/:id/tags',
+      name: 'media-tags',
       component: () => import('../views/MediaTagsView.vue'),
-      meta: { title: 'Image Tags' },
+      meta: { title: 'Media Tags' },
       props: route => ({
-        mediaType: 'images',
-        mediaId: Number(route.params.id)
-      })
-    },
-    {
-      path: '/videos/:id/tags',
-      name: 'video-tags',
-      component: () => import('../views/MediaTagsView.vue'),
-      meta: { title: 'Video Tags' },
-      props: route => ({
-        mediaType: 'videos',
         mediaId: Number(route.params.id)
       })
     },
@@ -80,10 +50,37 @@ const router = createRouter({
       component: () => import('../views/TagListView.vue')
     },
     {
+      path: '/tags/:tagId',
+      name: 'tag-implications',
+      meta: { title: 'Tag Implications' },
+      component: () => import('../views/TagImplicationsView.vue'),
+      props: route => ({
+        tagId: Number(route.params.tagId)
+      })
+    },
+    {
+      path: '/favorites',
+      name: 'favorites',
+      meta: { title: 'Favorites' },
+      component: () => import('../views/FavoritesView.vue')
+    },
+    {
+      path: '/upload',
+      name: 'upload',
+      meta: { title: 'Upload' },
+      component: () => import('../views/UploadView.vue')
+    },
+    {
       path: '/duplicates',
       name: 'duplicates',
       meta: { title: 'Duplicates' },
       component: () => import('../views/DuplicatesView.vue')
+    },
+    {
+      path: '/login',
+      name: 'login',
+      meta: { title: 'Admin Login' },
+      component: () => import('../views/LoginView.vue')
     },
     {
       path: '/:pathMatch(.*)*',

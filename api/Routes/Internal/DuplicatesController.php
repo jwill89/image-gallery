@@ -2,93 +2,111 @@
 
 namespace Routes\Internal;
 
+use PDO;
 use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
-use Gallery\Collection\ImageCollection;
+use Gallery\Collection\MediaCollection;
+use Gallery\Core\DatabaseConnection;
 use Gallery\Core\DuplicateScanner;
 
 /**
  * DuplicatesController class
- * This class handles duplicate image detection and management.
+ * Handles duplicate image detection, management, and dismissal.
+ * Duplicates are image-only (based on perceptual fingerprinting).
  */
 class DuplicatesController extends AbstractController
 {
-    private ImageCollection $image_collection;
+    private MediaCollection $media_collection;
 
-    // Path to the dupes directory (relative to project root, called from api/)
-    private const string DUPES_DIRECTORY = '../dupes/';
+    private const string DUPES_DIRECTORY = 'dupes/';
 
     public function __construct(ContainerInterface $container)
     {
         parent::__construct($container);
-        $this->image_collection = new ImageCollection();
+        $this->media_collection = new MediaCollection();
     }
 
     /**
-     * getLatestReport - Returns the latest duplicates report JSON.
-     * @throws \JsonException
+     * Returns the latest duplicates report JSON.
      */
     public function getLatestReport(Request $request, Response $response, array $args): Response
     {
         $dupes_dir = self::DUPES_DIRECTORY;
 
-        // Check if directory exists
         if (!is_dir($dupes_dir)) {
-            return $this->error($response, 'NoDupesDirectory', 404);
+            return $this->error($response, 'NoDupesDirectory', 404, 'No duplicate scan has been run yet.');
         }
 
-        // Find all dupes JSON files
         $files = glob($dupes_dir . 'dupes-*.json');
 
         if (empty($files)) {
-            return $this->error($response, 'NoReportsFound', 404);
+            return $this->error($response, 'NoReportsFound', 404, 'No duplicate reports found. Run a scan first.');
         }
 
-        // Sort by modification time descending to get the latest
         usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
 
-        // Read the latest file
         $latest_file = $files[0];
         $content = file_get_contents($latest_file);
         $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
 
         if ($data === null) {
-            return $this->error($response, 'InvalidReport', 500);
+            return $this->error($response, 'InvalidReport', 500, 'The latest report file is corrupted or unreadable.');
         }
 
-        // Enrich the matches with image data (filenames for thumbnails)
+        // Load dismissed pairs so we can filter the report in real time
+        $dismissed = [];
+        try {
+            $db = DatabaseConnection::getInstance();
+            $stmt = $db->query('SELECT media_id_1, media_id_2 FROM dismissed_duplicates');
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $a = min((int)$row['media_id_1'], (int)$row['media_id_2']);
+                $b = max((int)$row['media_id_1'], (int)$row['media_id_2']);
+                $dismissed[$a . ':' . $b] = true;
+            }
+        } catch (\Throwable $e) {
+            // Table may not exist yet — skip filtering
+        }
+
+        // Enrich matches with media data
         $enriched_matches = [];
         if (isset($data['matches']) && is_array($data['matches'])) {
             foreach ($data['matches'] as $match) {
                 $id1 = $match[0];
                 $id2 = $match[1];
                 $distance = $match[2] ?? null;
+                $ssim = $match[3] ?? null;
+
+                // Skip dismissed pairs
+                $a = min($id1, $id2);
+                $b = max($id1, $id2);
+                if (isset($dismissed[$a . ':' . $b])) {
+                    continue;
+                }
 
                 try {
-                    $img1 = $this->image_collection->get($id1);
-                    $img2 = $this->image_collection->get($id2);
+                    $media1 = $this->media_collection->get($id1);
+                    $media2 = $this->media_collection->get($id2);
 
-                    // Skip if either image no longer exists in DB
-                    if ($img1 === null || $img2 === null) {
+                    if ($media1 === null || $media2 === null) {
                         continue;
                     }
 
                     $enriched_matches[] = [
-                        'image_1' => [
-                            'image_id' => $id1,
-                            'file_name' => $img1->getFileName(),
-                            'hash' => $img1->getHash(),
+                        'media_1' => [
+                            'media_id' => $id1,
+                            'file_name' => $media1->getFileName(),
+                            'hash' => $media1->getHash(),
                         ],
-                        'image_2' => [
-                            'image_id' => $id2,
-                            'file_name' => $img2->getFileName(),
-                            'hash' => $img2->getHash(),
+                        'media_2' => [
+                            'media_id' => $id2,
+                            'file_name' => $media2->getFileName(),
+                            'hash' => $media2->getHash(),
                         ],
                         'distance' => $distance,
+                        'ssim' => $ssim,
                     ];
                 } catch (\Throwable $e) {
-                    // One or both images may have been deleted since the report was generated
                     continue;
                 }
             }
@@ -106,7 +124,7 @@ class DuplicatesController extends AbstractController
     }
 
     /**
-     * runScan - Executes the duplicate scanner directly and returns the result.
+     * Executes the duplicate scanner.
      */
     public function runScan(Request $request, Response $response, array $args): Response
     {
@@ -121,34 +139,69 @@ class DuplicatesController extends AbstractController
                 'success' => true,
                 'message' => 'Scan completed successfully.',
                 'images_compared' => $result['images_compared'],
+                'lsh_candidates' => $result['lsh_candidates'],
                 'duplicates_found' => $result['duplicates_found'],
                 'execution_time' => $result['execution_time_seconds'],
             ]);
         } catch (\Throwable $e) {
             $this->logger->error('Duplicate scan failed', ['error' => $e->getMessage()]);
-            return $this->error($response, 'ScanFailed', 500);
+            return $this->error($response, 'ScanFailed', 500, 'The duplicate scan encountered an error. Check the server logs for details.');
         }
     }
 
     /**
-     * deleteImages - Deletes one or more images from the database by ID.
-     * The cron script will clean up orphaned files on disk.
+     * POST /duplicates/dismiss/ — Dismiss a pair of media items as not-duplicates.
+     * Expects { media_id_1: int, media_id_2: int }
      */
-    public function deleteImages(Request $request, Response $response, array $args): Response
+    public function dismissPair(Request $request, Response $response, array $args): Response
     {
         $params = $request->getParsedBody();
-        $image_ids = $params['image_ids'] ?? [];
+        $id1 = (int)($params['media_id_1'] ?? 0);
+        $id2 = (int)($params['media_id_2'] ?? 0);
 
-        if (empty($image_ids) || !is_array($image_ids)) {
-            return $this->error($response, 'InvalidInput', 400);
+        if ($id1 <= 0 || $id2 <= 0 || $id1 === $id2) {
+            return $this->error($response, 'InvalidInput', 400, 'Two different, valid media IDs are required.');
         }
 
-        $this->logger->info('Delete images requested', ['image_ids' => $image_ids]);
+        // Always store with smaller ID first for consistency
+        $a = min($id1, $id2);
+        $b = max($id1, $id2);
+
+        $db = DatabaseConnection::getInstance();
+        $stmt = $db->prepare('INSERT OR IGNORE INTO dismissed_duplicates (media_id_1, media_id_2, dismissed_at) VALUES (:id1, :id2, :ts)');
+        $stmt->execute([
+            ':id1' => $a,
+            ':id2' => $b,
+            ':ts' => time(),
+        ]);
+
+        $this->logger->info('Duplicate pair dismissed', ['media_id_1' => $a, 'media_id_2' => $b]);
+
+        return $this->success($response, [
+            'dismissed' => true,
+            'media_id_1' => $a,
+            'media_id_2' => $b,
+        ]);
+    }
+
+    /**
+     * Deletes one or more media items by ID.
+     */
+    public function deleteMedia(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getParsedBody();
+        $media_ids = $params['media_ids'] ?? [];
+
+        if (empty($media_ids) || !is_array($media_ids)) {
+            return $this->error($response, 'InvalidInput', 400, 'A list of media IDs to delete is required.');
+        }
+
+        $this->logger->info('Delete media requested', ['media_ids' => $media_ids]);
 
         $deleted = [];
         $failed = [];
 
-        foreach ($image_ids as $id) {
+        foreach ($media_ids as $id) {
             $id = (int) $id;
             if ($id <= 0) {
                 $failed[] = $id;
@@ -156,8 +209,8 @@ class DuplicatesController extends AbstractController
             }
 
             try {
-                $image = $this->image_collection->get($id);
-                if ($image !== null && $this->image_collection->delete($image)) {
+                $media = $this->media_collection->get($id);
+                if ($media !== null && $this->media_collection->delete($media)) {
                     $deleted[] = $id;
                 } else {
                     $failed[] = $id;
@@ -165,6 +218,10 @@ class DuplicatesController extends AbstractController
             } catch (\Throwable $e) {
                 $failed[] = $id;
             }
+        }
+
+        if (!empty($deleted)) {
+            $this->invalidateCache('media', 'tags');
         }
 
         return $this->success($response, [

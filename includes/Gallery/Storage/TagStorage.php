@@ -6,36 +6,24 @@ use PDO;
 use Gallery\Core\DatabaseConnection;
 use Gallery\Collection\TagCategoryCollection;
 use Gallery\Structure\Tag;
-use Gallery\Structure\TagCategory;
-use Gallery\Structure\Image;
-use Gallery\Structure\Video;
+use Gallery\Structure\Media;
 
 /**
  * TagStorage Class
- *
- * This class is responsible for managing tag storage in the database.
+ * Manages tag storage in the database with unified media_tags junction table.
  */
 class TagStorage
 {
-    // Table Constants
     private const string MAIN_TABLE = 'tags';
-    private const string IMAGE_TAG_TABLE = 'image_tags';
-    private const string VIDEO_TAG_TABLE = 'video_tags';
+    private const string MEDIA_TAG_TABLE = 'media_tags';
     private const string CATEGORIES_TABLE = 'tag_categories';
+    private const string IMPLICATIONS_TABLE = 'tag_implications';
 
-    // Main Class Object Constant
     private const string OBJ_CLASS = Tag::class;
 
-    // Database Connection
     private PDO $db;
-
-    // Cached category collection
     private ?TagCategoryCollection $categoryCollection = null;
 
-    /**
-     * Class constructor
-     * Initializes the Database Connection.
-     */
     public function __construct()
     {
         if (!isset($this->db)) {
@@ -43,9 +31,6 @@ class TagStorage
         }
     }
 
-    /**
-     * Get or create the cached TagCategoryCollection instance.
-     */
     private function getCategoryCollection(): TagCategoryCollection
     {
         if ($this->categoryCollection === null) {
@@ -55,11 +40,7 @@ class TagStorage
     }
 
     /**
-     * Retrieves a tag or an array of tags from the database.
-     *
-     * @param integer|null $tag_id Optional. The ID of the tag to retrieve. If null, retrieves all tags.
-     *
-     * @return Tag|Tag[]|null A Tag object, null if not found, or an array of Tag objects.
+     * Retrieves a tag or all tags from the database.
      */
     public function retrieve(?int $tag_id = null): Tag|array|null
     {
@@ -83,11 +64,7 @@ class TagStorage
     }
 
     /**
-     * Retrieves a tag from the database based on tag name or returns null if it doesn't exist.
-     *
-     * @param string $tag_name The name of the tag to retrieve.
-     *
-     * @return Tag|null The tag object if found, null otherwise.
+     * Retrieves a tag by name.
      */
     public function retrieveByName(string $tag_name): ?Tag
     {
@@ -102,18 +79,12 @@ class TagStorage
     }
 
     /**
-     * Retrieves a tag if it exists or creates it and stores it if it doesn't.
-     *
-     * @param string $tag_name The name of the tag to retrieve or create.
-     *
-     * @return Tag The tag object.
+     * Retrieves a tag if it exists, or creates and stores it.
      */
     public function retrieveOrCreate(string $tag_name): Tag
     {
-        // Tags and shortcodes are all lowercase
         $tag_name = strtolower($tag_name);
 
-        // First, split the tag name to see if a category shortcode was used.
         if (str_contains($tag_name, ':')) {
             [$category_shortcode, $name] = array_map('trim', explode(':', $tag_name, 2));
             $category = $this->getCategoryCollection()->getByShortcode($category_shortcode);
@@ -121,17 +92,15 @@ class TagStorage
             $category = null;
         }
 
-        // Check if we have a tag using the name based on if the category shortcode was valid
-        $tag_exists = ($category instanceof TagCategory) ? $this->retrieveByName($name) : $this->retrieveByName($tag_name);
+        $tag_exists = ($category instanceof \Gallery\Structure\TagCategory) ? $this->retrieveByName($name) : $this->retrieveByName($tag_name);
 
         if ($tag_exists instanceof Tag) {
             return $tag_exists;
         }
 
-        // Create a new tag
         $tag = new Tag();
 
-        if ($category instanceof TagCategory) {
+        if ($category instanceof \Gallery\Structure\TagCategory) {
             $tag->setTagName($name)->setCategoryId($category->getCategoryId());
         } else {
             $tag->setTagName($tag_name)->setCategoryId(1);
@@ -144,46 +113,19 @@ class TagStorage
     }
 
     /**
-     * Get tags based on supplied image.
-     *
-     * @param Image $image The image to retrieve tags for.
-     *
-     * @return Tag[] An array of Tag objects associated with the image.
+     * Get tags for a given media item.
      */
-    public function retrieveTagsForImage(Image $image): array
+    public function retrieveTagsForMedia(Media $media): array
     {
         $sql = "SELECT tt.* FROM " . self::MAIN_TABLE . " tt
-                    LEFT JOIN " . self::IMAGE_TAG_TABLE . " it USING (tag_id)
-                    WHERE it.image_id = :image_id 
+                    LEFT JOIN " . self::MEDIA_TAG_TABLE . " mt USING (tag_id)
+                    WHERE mt.media_id = :media_id
                     ORDER BY CASE WHEN tt.category_id = 1 THEN 10
                                   ELSE tt.category_id END,
                             tt.tag_name ASC";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
-        $stmt->execute();
-
-        return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
-    }
-
-    /**
-     * Get tags based on supplied video.
-     *
-     * @param Video $video The video to retrieve tags for.
-     *
-     * @return Tag[] An array of Tag objects associated with the video.
-     */
-    public function retrieveTagsForVideo(Video $video): array
-    {
-        $sql = "SELECT tt.* FROM " . self::MAIN_TABLE . " tt
-                    LEFT JOIN " . self::VIDEO_TAG_TABLE . " vt USING (tag_id)
-                    WHERE vt.video_id = :video_id
-                    ORDER BY CASE WHEN tt.category_id = 1 THEN 10
-                                  ELSE tt.category_id END,
-                            tt.tag_name ASC";
-
-        $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':video_id', $video->getVideoId(), PDO::PARAM_INT);
+        $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
         $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
@@ -191,18 +133,16 @@ class TagStorage
 
     /**
      * Get all tags with category and usage counts for the tags page.
-     *
-     * @return array
      */
     public function retrieveAllTagsForPage(): array
     {
         $sql = "SELECT t.tag_id, t.tag_name, t.category_id, tc.category_name,
-                COALESCE(ic.image_count, 0) AS image_count,
-                COALESCE(vc.video_count, 0) AS video_count
+                COALESCE(mc.media_count, 0) AS media_count,
+                COALESCE(imp.implication_count, 0) AS implication_count
              FROM " . self::MAIN_TABLE . " t
              LEFT JOIN " . self::CATEGORIES_TABLE . " tc USING (category_id)
-             LEFT JOIN (SELECT tag_id, COUNT(*) AS image_count FROM " . self::IMAGE_TAG_TABLE . " GROUP BY tag_id) ic ON ic.tag_id = t.tag_id
-             LEFT JOIN (SELECT tag_id, COUNT(*) AS video_count FROM " . self::VIDEO_TAG_TABLE . " GROUP BY tag_id) vc ON vc.tag_id = t.tag_id
+             LEFT JOIN (SELECT tag_id, COUNT(*) AS media_count FROM " . self::MEDIA_TAG_TABLE . " GROUP BY tag_id) mc ON mc.tag_id = t.tag_id
+             LEFT JOIN (SELECT tag_id, COUNT(*) AS implication_count FROM tag_implications GROUP BY tag_id) imp ON imp.tag_id = t.tag_id
              ORDER BY t.category_id ASC, t.tag_name ASC";
 
         $stmt = $this->db->prepare($sql);
@@ -212,21 +152,18 @@ class TagStorage
     }
 
     /**
-     * Add tags to an image. Uses INSERT OR IGNORE to skip duplicates.
-     *
-     * @param Image $image Image object to which tags will be added.
-     * @param array $tag_ids Array of tag IDs to be added to the image.
-     *
-     * @return bool True on success, false on failure.
+     * Add tags to a media item. Resolves implications transitively.
      */
-    public function addTagsToImage(Image $image, array $tag_ids): bool
+    public function addTagsToMedia(Media $media, array $tag_ids): bool
     {
-        $sql = "INSERT OR IGNORE INTO " . self::IMAGE_TAG_TABLE . " (image_id, tag_id) VALUES (:image_id, :tag_id)";
-        $stmt = $this->db->prepare($sql);
-        $image_id = $image->getImageId();
+        $all_tag_ids = $this->resolveImpliedTagIds($tag_ids);
 
-        foreach ($tag_ids as $tag_id) {
-            if (!$stmt->execute([':image_id' => $image_id, ':tag_id' => $tag_id])) {
+        $sql = "INSERT OR IGNORE INTO " . self::MEDIA_TAG_TABLE . " (media_id, tag_id) VALUES (:media_id, :tag_id)";
+        $stmt = $this->db->prepare($sql);
+        $media_id = $media->getMediaId();
+
+        foreach ($all_tag_ids as $tag_id) {
+            if (!$stmt->execute([':media_id' => $media_id, ':tag_id' => $tag_id])) {
                 return false;
             }
         }
@@ -235,68 +172,20 @@ class TagStorage
     }
 
     /**
-     * Add tags to a video. Uses INSERT OR IGNORE to skip duplicates.
-     *
-     * @param Video $video Video object to which tags will be added.
-     * @param array $tag_ids Array of tag IDs to be added to the video.
-     *
-     * @return bool True on success, false on failure.
+     * Removes a tag from a media item.
      */
-    public function addTagsToVideo(Video $video, array $tag_ids): bool
+    public function removeTagFromMedia(Media $media, Tag $tag): bool
     {
-        $sql = "INSERT OR IGNORE INTO " . self::VIDEO_TAG_TABLE . " (video_id, tag_id) VALUES (:video_id, :tag_id)";
+        $sql = "DELETE FROM " . self::MEDIA_TAG_TABLE . " WHERE media_id = :media_id AND tag_id = :tag_id";
         $stmt = $this->db->prepare($sql);
-        $video_id = $video->getVideoId();
-
-        foreach ($tag_ids as $tag_id) {
-            if (!$stmt->execute([':video_id' => $video_id, ':tag_id' => $tag_id])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Removes a tag from an image.
-     *
-     * @param Image $image The image from which the tag will be removed.
-     * @param Tag $tag The tag to be removed.
-     *
-     * @return bool True on success, false on failure.
-     */
-    public function removeTagFromImage(Image $image, Tag $tag): bool
-    {
-        $sql = "DELETE FROM " . self::IMAGE_TAG_TABLE . " WHERE image_id = :image_id AND tag_id = :tag_id";
-        $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
+        $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
         $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
 
         return $stmt->execute();
     }
 
     /**
-     * Removes a tag from a video.
-     *
-     * @param Video $video The video from which the tag will be removed.
-     * @param Tag $tag The tag to be removed.
-     *
-     * @return bool True on success, false on failure.
-     */
-    public function removeTagFromVideo(Video $video, Tag $tag): bool
-    {
-        $sql = "DELETE FROM " . self::VIDEO_TAG_TABLE . " WHERE video_id = :video_id AND tag_id = :tag_id";
-        $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':video_id', $video->getVideoId(), PDO::PARAM_INT);
-        $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
-
-        return $stmt->execute();
-    }
-
-    /**
-     * Gets the total number of tags in the database.
-     *
-     * @return int The total number of tags.
+     * Gets the total number of tags.
      */
     public function retrieveTotalTagCount(): int
     {
@@ -308,11 +197,7 @@ class TagStorage
     }
 
     /**
-     * Check if a tag exists in the database based on tag title.
-     *
-     * @param string $tag_name The name of the tag to check.
-     *
-     * @return bool True if the tag exists, false otherwise.
+     * Check if a tag exists by name.
      */
     public function tagExists(string $tag_name): bool
     {
@@ -326,10 +211,6 @@ class TagStorage
 
     /**
      * Saves a tag to the database.
-     *
-     * @param Tag $tag The tag object to be saved.
-     *
-     * @return int The ID of the saved tag.
      */
     public function store(Tag $tag): int
     {
@@ -355,11 +236,7 @@ class TagStorage
     }
 
     /**
-     * Deletes a tag from the database based on the supplied tag.
-     *
-     * @param Tag $tag The tag object to be deleted.
-     *
-     * @return bool True on success, false on failure.
+     * Deletes a tag from the database.
      */
     public function delete(Tag $tag): bool
     {
@@ -370,13 +247,88 @@ class TagStorage
         return $stmt->execute();
     }
 
+    // ========================================================================
+    // Tag Implication Methods
+    // ========================================================================
+
+    public function retrieveImplicationsForTag(int $tag_id): array
+    {
+        $sql = "SELECT implied_tag_id FROM " . self::IMPLICATIONS_TABLE . " WHERE tag_id = :tag_id";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':tag_id', $tag_id, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    public function retrieveAllImplications(): array
+    {
+        $sql = "SELECT ti.tag_id, t1.tag_name, ti.implied_tag_id, t2.tag_name AS implied_tag_name
+                FROM " . self::IMPLICATIONS_TABLE . " ti
+                JOIN " . self::MAIN_TABLE . " t1 ON ti.tag_id = t1.tag_id
+                JOIN " . self::MAIN_TABLE . " t2 ON ti.implied_tag_id = t2.tag_id
+                ORDER BY t1.tag_name ASC, t2.tag_name ASC";
+
+        $stmt = $this->db->query($sql);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function addImplication(int $tag_id, int $implied_tag_id): bool
+    {
+        if ($tag_id === $implied_tag_id) {
+            return false;
+        }
+
+        $resolved = $this->resolveImpliedTagIds([$implied_tag_id]);
+        if (in_array($tag_id, $resolved, true)) {
+            return false;
+        }
+
+        $sql = "INSERT OR IGNORE INTO " . self::IMPLICATIONS_TABLE . " (tag_id, implied_tag_id) VALUES (:tag_id, :implied_tag_id)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':tag_id', $tag_id, PDO::PARAM_INT);
+        $stmt->bindValue(':implied_tag_id', $implied_tag_id, PDO::PARAM_INT);
+
+        return $stmt->execute();
+    }
+
+    public function removeImplication(int $tag_id, int $implied_tag_id): bool
+    {
+        $sql = "DELETE FROM " . self::IMPLICATIONS_TABLE . " WHERE tag_id = :tag_id AND implied_tag_id = :implied_tag_id";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':tag_id', $tag_id, PDO::PARAM_INT);
+        $stmt->bindValue(':implied_tag_id', $implied_tag_id, PDO::PARAM_INT);
+
+        return $stmt->execute();
+    }
+
+    public function resolveImpliedTagIds(array $tag_ids): array
+    {
+        $resolved = [];
+        $queue = $tag_ids;
+
+        while (!empty($queue)) {
+            $current = array_shift($queue);
+
+            if (in_array($current, $resolved, true)) {
+                continue;
+            }
+
+            $resolved[] = $current;
+            $implied = $this->retrieveImplicationsForTag($current);
+
+            foreach ($implied as $impliedId) {
+                if (!in_array($impliedId, $resolved, true)) {
+                    $queue[] = $impliedId;
+                }
+            }
+        }
+
+        return $resolved;
+    }
+
     /**
-     * Migrate all usages of one tag to another tag, then optionally delete the source tag.
-     * For items that already have the target tag, just remove the source tag.
-     *
-     * @param Tag $sourceTag The tag to migrate from.
-     * @param Tag $targetTag The tag to migrate to.
-     * @return bool
+     * Migrate all usages of one tag to another (unified media_tags table).
      */
     public function migrateTag(Tag $sourceTag, Tag $targetTag): bool
     {
@@ -386,30 +338,16 @@ class TagStorage
         $this->db->beginTransaction();
 
         try {
-            // Images: add target tag where source exists and target doesn't
-            $sql = "INSERT OR IGNORE INTO " . self::IMAGE_TAG_TABLE . " (image_id, tag_id)
-                    SELECT image_id, :target_id FROM " . self::IMAGE_TAG_TABLE . " WHERE tag_id = :source_id";
+            // Add target tag where source exists and target doesn't
+            $sql = "INSERT OR IGNORE INTO " . self::MEDIA_TAG_TABLE . " (media_id, tag_id)
+                    SELECT media_id, :target_id FROM " . self::MEDIA_TAG_TABLE . " WHERE tag_id = :source_id";
             $stmt = $this->db->prepare($sql);
             $stmt->bindValue(':target_id', $targetId, PDO::PARAM_INT);
             $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
             $stmt->execute();
 
-            // Images: remove source tag
-            $sql = "DELETE FROM " . self::IMAGE_TAG_TABLE . " WHERE tag_id = :source_id";
-            $stmt = $this->db->prepare($sql);
-            $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
-            $stmt->execute();
-
-            // Videos: add target tag where source exists and target doesn't
-            $sql = "INSERT OR IGNORE INTO " . self::VIDEO_TAG_TABLE . " (video_id, tag_id)
-                    SELECT video_id, :target_id FROM " . self::VIDEO_TAG_TABLE . " WHERE tag_id = :source_id";
-            $stmt = $this->db->prepare($sql);
-            $stmt->bindValue(':target_id', $targetId, PDO::PARAM_INT);
-            $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
-            $stmt->execute();
-
-            // Videos: remove source tag
-            $sql = "DELETE FROM " . self::VIDEO_TAG_TABLE . " WHERE tag_id = :source_id";
+            // Remove source tag
+            $sql = "DELETE FROM " . self::MEDIA_TAG_TABLE . " WHERE tag_id = :source_id";
             $stmt = $this->db->prepare($sql);
             $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
             $stmt->execute();

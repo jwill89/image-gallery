@@ -7,6 +7,7 @@ use Monolog\Logger;
 use Slim\Http\Response;
 use Gallery\Core\DatabaseConnection;
 use Gallery\Core\Logger as AppLogger;
+use Gallery\Core\ResponseCache;
 use Gallery\Collection\TagCollection;
 use Psr\Container\ContainerInterface;
 
@@ -54,17 +55,26 @@ abstract class AbstractController
     }
 
     /**
-     * Return an error JSON response.
+     * Return an error JSON response with a machine-readable code and human-readable message.
      *
      * @param Response $response The response object.
-     * @param string $error The error code/message.
+     * @param string $error The machine-readable error code (e.g. 'MediaNotFound').
      * @param int $status HTTP status code.
+     * @param string|null $message Optional human-readable message. If omitted, auto-generated from $error.
      *
      * @return Response
      */
-    protected function error(Response $response, string $error, int $status): Response
+    protected function error(Response $response, string $error, int $status, ?string $message = null): Response
     {
-        return $response->withJson(['error' => $error], $status);
+        if ($message === null) {
+            // Convert PascalCase error code to a readable sentence
+            $message = trim(preg_replace('/(?<!^)([A-Z])/', ' $1', $error));
+        }
+
+        return $response->withJson([
+            'error' => $error,
+            'message' => $message,
+        ], $status);
     }
 
     /**
@@ -100,5 +110,52 @@ abstract class AbstractController
             }
         }
         return $tag_ids;
+    }
+
+    /**
+     * Return a cached JSON response, or generate, cache, and return it on miss.
+     *
+     * The generator callable must return the data to be JSON-encoded.
+     * On a cache hit the stored JSON is written directly to the response body,
+     * skipping both the DB query and the json_encode step.
+     *
+     * @param Response $response The Slim response object.
+     * @param string   $group    Cache group for targeted invalidation.
+     * @param string   $key      Unique cache key within the group.
+     * @param int      $ttl      Time-to-live in seconds.
+     * @param callable $generator Callable that returns the response data.
+     *
+     * @return Response
+     */
+    protected function cachedSuccess(Response $response, string $group, string $key, int $ttl, callable $generator): Response
+    {
+        $cache = ResponseCache::getInstance();
+        $json = $cache->get($group, $key);
+
+        if ($json !== null) {
+            $response->getBody()->write($json);
+            return $response
+                ->withHeader('Content-Type', 'application/json')
+                ->withHeader('X-Cache', 'HIT');
+        }
+
+        $data = $generator();
+        $json = json_encode($data, JSON_THROW_ON_ERROR);
+        $cache->set($group, $key, $json, $ttl);
+
+        $response->getBody()->write($json);
+        return $response
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('X-Cache', 'MISS');
+    }
+
+    /**
+     * Invalidate one or more cache groups after a mutation.
+     *
+     * @param string ...$groups Cache group names to invalidate.
+     */
+    protected function invalidateCache(string ...$groups): void
+    {
+        ResponseCache::getInstance()->invalidateGroups(...$groups);
     }
 }

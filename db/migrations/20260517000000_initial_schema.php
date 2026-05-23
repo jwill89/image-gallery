@@ -8,25 +8,18 @@ final class InitialSchema extends AbstractMigration
 {
     public function change(): void
     {
-        // Images table
-        $this->table('images', ['id' => false, 'primary_key' => ['image_id']])
-            ->addColumn('image_id', 'integer', ['identity' => true])
+        // Unified media table (images + videos)
+        $this->table('media', ['id' => false, 'primary_key' => ['media_id']])
+            ->addColumn('media_id', 'integer', ['identity' => true])
+            ->addColumn('media_type', 'text', ['null' => false, 'default' => 'image'])
             ->addColumn('file_name', 'text', ['null' => false])
             ->addColumn('file_time', 'integer', ['null' => false])
             ->addColumn('hash', 'text', ['null' => false])
-            ->addColumn('bits_fingerprint', 'text', ['null' => false])
+            ->addColumn('bits_fingerprint', 'text', ['null' => false, 'default' => ''])
             ->addIndex(['file_name'], ['unique' => true])
             ->addIndex(['hash'])
-            ->create();
-
-        // Videos table
-        $this->table('videos', ['id' => false, 'primary_key' => ['video_id']])
-            ->addColumn('video_id', 'integer', ['identity' => true])
-            ->addColumn('file_name', 'text', ['null' => false])
-            ->addColumn('file_time', 'integer', ['null' => false])
-            ->addColumn('hash', 'text', ['null' => false])
-            ->addIndex(['file_name'], ['unique' => true])
-            ->addIndex(['hash'])
+            ->addIndex(['media_type'])
+            ->addIndex(['file_time', 'media_id'], ['order' => ['file_time' => 'DESC', 'media_id' => 'DESC']])
             ->create();
 
         // Tag categories table
@@ -44,22 +37,16 @@ final class InitialSchema extends AbstractMigration
             ->addColumn('category_id', 'integer', ['null' => false, 'default' => 1])
             ->addColumn('tag_name', 'text', ['null' => false])
             ->addIndex(['tag_name'], ['unique' => true])
+            ->addIndex(['category_id'])
             ->addForeignKey('category_id', 'tag_categories', 'category_id')
             ->create();
 
-        // Image tags junction table
-        $this->table('image_tags', ['id' => false, 'primary_key' => ['image_id', 'tag_id']])
-            ->addColumn('image_id', 'integer', ['null' => false])
+        // Unified media tags junction table
+        $this->table('media_tags', ['id' => false, 'primary_key' => ['media_id', 'tag_id']])
+            ->addColumn('media_id', 'integer', ['null' => false])
             ->addColumn('tag_id', 'integer', ['null' => false])
-            ->addForeignKey('image_id', 'images', 'image_id', ['delete' => 'CASCADE', 'update' => 'CASCADE'])
-            ->addForeignKey('tag_id', 'tags', 'tag_id', ['delete' => 'CASCADE', 'update' => 'CASCADE'])
-            ->create();
-
-        // Video tags junction table
-        $this->table('video_tags', ['id' => false, 'primary_key' => ['video_id', 'tag_id']])
-            ->addColumn('video_id', 'integer', ['null' => false])
-            ->addColumn('tag_id', 'integer', ['null' => false])
-            ->addForeignKey('video_id', 'videos', 'video_id', ['delete' => 'CASCADE', 'update' => 'CASCADE'])
+            ->addIndex(['tag_id', 'media_id'])
+            ->addForeignKey('media_id', 'media', 'media_id', ['delete' => 'CASCADE', 'update' => 'CASCADE'])
             ->addForeignKey('tag_id', 'tags', 'tag_id', ['delete' => 'CASCADE', 'update' => 'CASCADE'])
             ->create();
 
@@ -74,6 +61,7 @@ final class InitialSchema extends AbstractMigration
         $this->table('auth_tokens', ['id' => false, 'primary_key' => ['token']])
             ->addColumn('token', 'text', ['null' => false])
             ->addColumn('created_at', 'integer', ['null' => false])
+            ->addIndex(['created_at'])
             ->create();
 
         // Seed default tag categories

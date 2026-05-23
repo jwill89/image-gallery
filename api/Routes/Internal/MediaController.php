@@ -6,63 +6,89 @@ use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Core\Configuration;
+use Gallery\Core\ResponseCache;
+use Gallery\Collection\MediaCollection;
 use Gallery\Collection\TagCollection;
 
 /**
  * MediaController class
- *
- * Abstract base controller for media endpoints (images and videos).
- * Eliminates duplication between ImageController and VideoController
- * by parameterizing the media type, collection, ID field, and entity name.
+ * Concrete controller handling all media API endpoints (unified images + videos).
  */
-abstract class MediaController extends AbstractController
+class MediaController extends AbstractController
 {
-    protected TagCollection $tag_collection;
+    private MediaCollection $media_collection;
+    private TagCollection $tag_collection;
 
     public function __construct(ContainerInterface $container)
     {
         parent::__construct($container);
+        $this->media_collection = new MediaCollection();
         $this->tag_collection = new TagCollection();
     }
 
     /**
-     * Get the media collection instance (ImageCollection or VideoCollection).
-     */
-    abstract protected function getCollection(): object;
-
-    /**
-     * Get the route parameter name for the media ID (e.g., 'image_id' or 'video_id').
-     */
-    abstract protected function getIdParam(): string;
-
-    /**
-     * Get the human-readable entity name for error messages (e.g., 'Image' or 'Video').
-     */
-    abstract protected function getEntityName(): string;
-
-    /**
-     * Get a single media item or all items.
+     * Get a single media item by ID, or all items if no ID given.
      */
     public function getItem(Request $request, Response $response, array $args): Response
     {
-        $id = $this->parseParameters($args, $this->getIdParam(), null);
+        $id = $this->parseParameters($args, 'media_id', null);
 
         if ($id === null) {
-            return $this->success($response, $this->getCollection()->getAll());
+            return $this->cachedSuccess($response, 'media', 'all', ResponseCache::TTL_MEDIUM, function () {
+                return $this->media_collection->getAll();
+            });
         }
 
         if (!is_numeric($id) || $id <= 0) {
-            return $this->error($response, 'Invalid' . $this->getEntityName() . 'ID', 400);
+            return $this->error($response, 'InvalidMediaID', 400, 'The media ID must be a positive number.');
         }
 
-        $data = $this->getCollection()->get((int)$id);
+        $data = $this->media_collection->get((int)$id);
         return $data === null
-            ? $this->error($response, $this->getEntityName() . 'NotFound', 404)
+            ? $this->error($response, 'MediaNotFound', 404, 'The requested media item could not be found.')
             : $this->success($response, $data);
     }
 
     /**
-     * Get paginated media items with total_pages included in response.
+     * POST /media/by-ids/ — Get multiple media items by an array of IDs.
+     * Expects JSON body: { "ids": [1, 2, 3] }
+     * Returns only items that exist; missing IDs are silently skipped.
+     * Capped at 200 IDs per request.
+     */
+    public function getItemsByIds(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getParsedBody() ?? [];
+        $rawIds = $params['ids'] ?? [];
+
+        if (!is_array($rawIds) || empty($rawIds)) {
+            return $this->error($response, 'InvalidInput', 400, 'A non-empty array of media IDs is required.');
+        }
+
+        // Cap at 200 to prevent abuse
+        $ids = array_slice(array_filter(array_map('intval', $rawIds), fn($id) => $id > 0), 0, 200);
+
+        if (empty($ids)) {
+            return $this->error($response, 'InvalidInput', 400, 'No valid media IDs were provided.');
+        }
+
+        $items = $this->media_collection->getByIds($ids);
+        return $this->success($response, $items);
+    }
+
+    /**
+     * Get a single random media item.
+     */
+    public function getRandomItem(Request $request, Response $response, array $args): Response
+    {
+        $item = $this->media_collection->getRandom();
+
+        return $item === null
+            ? $this->error($response, 'MediaNotFound', 404, 'No media items are available.')
+            : $this->success($response, $item);
+    }
+
+    /**
+     * Get paginated media items.
      */
     public function getItemsForPage(Request $request, Response $response, array $args): Response
     {
@@ -70,65 +96,132 @@ abstract class MediaController extends AbstractController
         $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         if ($page <= 0) {
-            return $this->error($response, 'InvalidPageNumber', 400);
+            return $this->error($response, 'InvalidPageNumber', 400, 'Page number must be 1 or greater.');
         }
 
-        $collection = $this->getCollection();
-        $items = $collection->getForPage($page, $items_per_page);
-        $total = $this->getTotalCount();
-        $total_pages = (int)ceil($total / $items_per_page);
+        return $this->cachedSuccess($response, 'media', "page:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($page, $items_per_page) {
+            $items = $this->media_collection->getForPage($page, $items_per_page);
+            $total = $this->media_collection->totalMedia();
+            $total_pages = (int)ceil($total / $items_per_page);
 
-        return $this->success($response, [
-            'items' => $items,
-            'total_pages' => $total_pages,
-            'current_page' => $page,
-        ]);
+            return [
+                'items' => $items,
+                'total_pages' => $total_pages,
+                'current_page' => $page,
+            ];
+        });
     }
 
     /**
-     * Get paginated media items filtered by tags with total_pages included.
+     * Get paginated media filtered by tags with support for negative tags.
      */
     public function getItemsWithTags(Request $request, Response $response, array $args): Response
     {
-        $tag_list = array_map('trim', explode(',', $this->parseParameters($args, 'tag_list', '')));
+        $tag_list_raw = $this->parseParameters($args, 'tag_list', '');
+        $tag_list = array_map('trim', explode(',', $tag_list_raw));
         $page = (int)$this->parseParameters($args, 'page', 1);
         $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
-        $tag_ids = $this->resolveTagIds($tag_list, $this->tag_collection);
-
-        if (empty($tag_ids)) {
-            return $this->error($response, 'NoValidTagsSupplied', 404);
+        $include_names = [];
+        $exclude_names = [];
+        foreach ($tag_list as $name) {
+            if ($name === '') continue;
+            if (str_starts_with($name, '-')) {
+                $stripped = ltrim(substr($name, 1));
+                if ($stripped !== '') {
+                    $exclude_names[] = $stripped;
+                }
+            } else {
+                $include_names[] = $name;
+            }
         }
 
-        $collection = $this->getCollection();
-        $items = $collection->getWithTags($tag_ids, $page, $items_per_page);
-        $total = $this->getTotalCountWithTags($tag_ids);
-        $total_pages = (int)ceil($total / $items_per_page);
+        $include_ids = $this->resolveTagIds($include_names, $this->tag_collection);
+        $exclude_ids = $this->resolveTagIds($exclude_names, $this->tag_collection);
 
-        return $this->success($response, [
-            'items' => $items,
-            'total_pages' => $total_pages,
-            'current_page' => $page,
-        ]);
+        if (empty($include_ids) && empty($exclude_ids)) {
+            return $this->error($response, 'NoValidTagsSupplied', 404, 'None of the specified tag names matched existing tags.');
+        }
+
+        return $this->cachedSuccess($response, 'media', "tags:{$tag_list_raw}:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($include_ids, $exclude_ids, $page, $items_per_page) {
+            if (!empty($exclude_ids)) {
+                $items = $this->media_collection->getWithTagFilter($include_ids, $exclude_ids, $page, $items_per_page);
+                $total = $this->media_collection->totalWithTagFilter($include_ids, $exclude_ids);
+            } else {
+                $items = $this->media_collection->getWithTags($include_ids, $page, $items_per_page);
+                $total = $this->media_collection->totalMediaWithTags($include_ids);
+            }
+
+            $total_pages = max(1, (int)ceil($total / $items_per_page));
+
+            return [
+                'items' => $items,
+                'total_pages' => $total_pages,
+                'current_page' => $page,
+            ];
+        });
     }
 
     /**
-     * Get the total number of media items.
+     * Get paginated untagged media.
+     */
+    public function getUntaggedItems(Request $request, Response $response, array $args): Response
+    {
+        $page = (int)$this->parseParameters($args, 'page', 0);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
+
+        if ($page <= 0) {
+            return $this->error($response, 'InvalidPageNumber', 400, 'Page number must be 1 or greater.');
+        }
+
+        return $this->cachedSuccess($response, 'media', "untagged:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($page, $items_per_page) {
+            $items = $this->media_collection->getUntagged($page, $items_per_page);
+            $total = $this->media_collection->totalUntagged();
+            $total_pages = max(1, (int)ceil($total / $items_per_page));
+
+            return [
+                'items' => $items,
+                'total_pages' => $total_pages,
+                'current_page' => $page,
+            ];
+        });
+    }
+
+    /**
+     * Delete a media item by ID.
+     */
+    public function deleteItem(Request $request, Response $response, array $args): Response
+    {
+        $id = $this->parseParameters($args, 'media_id', null);
+
+        if (!is_numeric($id) || $id <= 0) {
+            return $this->error($response, 'InvalidMediaID', 400, 'The media ID must be a positive number.');
+        }
+
+        $item = $this->media_collection->get((int)$id);
+
+        if ($item === null) {
+            return $this->error($response, 'MediaNotFound', 404, 'The media item to delete could not be found.');
+        }
+
+        try {
+            $this->media_collection->delete($item);
+            $this->invalidateCache('media', 'tags');
+            $this->logger->info('Media deleted', ['media_id' => (int)$id]);
+            return $this->success($response, ['deleted' => (int)$id]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to delete media', ['media_id' => (int)$id, 'error' => $e->getMessage()]);
+            return $this->error($response, 'DeleteFailed', 500, 'The media item could not be deleted. Please try again.');
+        }
+    }
+
+    /**
+     * Get the total media count.
      */
     public function getTotal(Request $request, Response $response, array $args): Response
     {
-        return $this->success($response, $this->getTotalCount());
+        return $this->cachedSuccess($response, 'media', 'total', ResponseCache::TTL_MEDIUM, function () {
+            return $this->media_collection->totalMedia();
+        });
     }
-
-    /**
-     * Get total count of media items (used internally).
-     */
-    abstract protected function getTotalCount(): int;
-
-    /**
-     * Get total count of media items matching the given tags (used internally).
-     *
-     * @param int[] $tag_ids
-     */
-    abstract protected function getTotalCountWithTags(array $tag_ids): int;
 }

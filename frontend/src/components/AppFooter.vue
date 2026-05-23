@@ -20,14 +20,8 @@ const store = useGalleryStore()
       <div class="level">
         <div class="level-item has-text-centered">
           <div>
-            <p class="heading mb-0">Images</p>
-            <h3 class="m-0">{{ store.totalImages }}</h3>
-          </div>
-        </div>
-        <div class="level-item has-text-centered">
-          <div>
-            <p class="heading mb-0">Videos</p>
-            <h3 class="m-0">{{ store.totalVideos }}</h3>
+            <p class="heading mb-0">Media</p>
+            <h3 class="m-0">{{ store.totalMedia }}</h3>
           </div>
         </div>
       </div>

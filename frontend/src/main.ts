@@ -5,7 +5,6 @@ import App from './App.vue'
 import { useToastStore } from './stores/toast'
 
 import 'bulma/css/bulma.min.css'
-import '@fortawesome/fontawesome-free/css/all.min.css'
 import './style.css'
 
 const pinia = createPinia()
@@ -28,3 +27,12 @@ app.config.errorHandler = (err, _instance, info) => {
 }
 
 app.mount('#app')
+
+// Register the service worker for thumbnail caching and prefetch
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('SW registration failed:', err)
+    })
+  })
+}

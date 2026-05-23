@@ -36,14 +36,15 @@ echo "[OK] Database file exists and is writable.\n\n";
 
 // Table definitions
 $tables = [
-    'images' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "images" (
-        "image_id"	INTEGER NOT NULL UNIQUE,
+    'media' => <<<SQL
+    CREATE TABLE IF NOT EXISTS "media" (
+        "media_id"	INTEGER NOT NULL UNIQUE,
+        "media_type"	TEXT NOT NULL DEFAULT 'image',
         "file_name"	TEXT NOT NULL UNIQUE,
         "file_time"	INTEGER NOT NULL,
         "hash"	TEXT NOT NULL,
-        "bits_fingerprint"	TEXT NOT NULL,
-        PRIMARY KEY("image_id" AUTOINCREMENT)
+        "bits_fingerprint"	TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY("media_id" AUTOINCREMENT)
     )
     SQL,
 
@@ -66,33 +67,13 @@ $tables = [
     )
     SQL,
 
-    'videos' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "videos" (
-        "video_id"	INTEGER NOT NULL UNIQUE,
-        "file_name"	TEXT NOT NULL UNIQUE,
-        "file_time"	INTEGER NOT NULL,
-        "hash"	TEXT NOT NULL,
-        PRIMARY KEY("video_id" AUTOINCREMENT)
-    )
-    SQL,
-
-    'image_tags' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "image_tags" (
-        "image_id"	INTEGER NOT NULL,
+    'media_tags' => <<<SQL
+    CREATE TABLE IF NOT EXISTS "media_tags" (
+        "media_id"	INTEGER NOT NULL,
         "tag_id"	INTEGER NOT NULL,
-        CONSTRAINT "PRIMARY" PRIMARY KEY("image_id","tag_id"),
-        CONSTRAINT "FK__image_tags__images" FOREIGN KEY("image_id") REFERENCES "images"("image_id") ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT "FK__image_tags__tags" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE ON UPDATE CASCADE
-    )
-    SQL,
-
-    'video_tags' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "video_tags" (
-        "video_id"	INTEGER NOT NULL,
-        "tag_id"	INTEGER NOT NULL,
-        CONSTRAINT "PRIMARY" PRIMARY KEY("video_id","tag_id"),
-        CONSTRAINT "FK__video_tags__videos" FOREIGN KEY("video_id") REFERENCES "videos"("video_id") ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT "FK__video_tags__tags" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE ON UPDATE CASCADE
+        CONSTRAINT "PRIMARY" PRIMARY KEY("media_id","tag_id"),
+        CONSTRAINT "FK__media_tags__media" FOREIGN KEY("media_id") REFERENCES "media"("media_id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "FK__media_tags__tags" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE ON UPDATE CASCADE
     )
     SQL,
 
@@ -107,6 +88,27 @@ $tables = [
     CREATE TABLE IF NOT EXISTS "auth_tokens" (
         "token" TEXT NOT NULL PRIMARY KEY,
         "created_at" INTEGER NOT NULL
+    )
+    SQL,
+
+    'tag_implications' => <<<SQL
+    CREATE TABLE IF NOT EXISTS "tag_implications" (
+        "tag_id" INTEGER NOT NULL,
+        "implied_tag_id" INTEGER NOT NULL,
+        PRIMARY KEY("tag_id", "implied_tag_id"),
+        CONSTRAINT "FK__tag_implications__tags_trigger" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE,
+        CONSTRAINT "FK__tag_implications__tags_implied" FOREIGN KEY("implied_tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE
+    )
+    SQL,
+
+    'dismissed_duplicates' => <<<SQL
+    CREATE TABLE IF NOT EXISTS "dismissed_duplicates" (
+        "media_id_1" INTEGER NOT NULL,
+        "media_id_2" INTEGER NOT NULL,
+        "dismissed_at" INTEGER NOT NULL,
+        PRIMARY KEY("media_id_1", "media_id_2"),
+        CONSTRAINT "FK__dismissed_dupes__media_1" FOREIGN KEY("media_id_1") REFERENCES "media"("media_id") ON DELETE CASCADE,
+        CONSTRAINT "FK__dismissed_dupes__media_2" FOREIGN KEY("media_id_2") REFERENCES "media"("media_id") ON DELETE CASCADE
     )
     SQL,
 ];
@@ -125,7 +127,7 @@ foreach ($tables as $name => $sql) {
 // Insert default tag categories
 echo "\nInserting default tag categories... ";
 $sql = <<<SQL
-INSERT OR IGNORE INTO "tag_categories" ("category_id", "category_name", "category_short") 
+INSERT OR IGNORE INTO "tag_categories" ("category_id", "category_name", "category_short")
     VALUES (1, 'General', 'g'),
            (2, 'Artist', 'a'),
            (3, 'Character', 'c'),
@@ -138,9 +140,16 @@ echo ($success !== false) ? "[OK]\n" : "[ERROR] " . $db->errorInfo()[2] . "\n";
 // Create indexes
 echo "\nCreating indexes...\n";
 $indexes = [
-    'idx_images_hash' => 'CREATE INDEX IF NOT EXISTS idx_images_hash ON images(hash)',
-    'idx_videos_hash' => 'CREATE INDEX IF NOT EXISTS idx_videos_hash ON videos(hash)',
+    'idx_media_hash' => 'CREATE INDEX IF NOT EXISTS idx_media_hash ON media(hash)',
+    'idx_media_file_time' => 'CREATE INDEX IF NOT EXISTS idx_media_file_time ON media(file_time DESC, media_id DESC)',
+    'idx_media_type' => 'CREATE INDEX IF NOT EXISTS idx_media_type ON media(media_type)',
     'idx_rate_limits_ip_time' => 'CREATE INDEX IF NOT EXISTS idx_rate_limits_ip_time ON rate_limits(ip, requested_at)',
+    // Reverse index on junction table for tag-based queries (search, exclude, counts, migration)
+    'idx_media_tags_tag_media' => 'CREATE INDEX IF NOT EXISTS idx_media_tags_tag_media ON media_tags(tag_id, media_id)',
+    // Tags category lookup for display page joins/sorts
+    'idx_tags_category' => 'CREATE INDEX IF NOT EXISTS idx_tags_category ON tags(category_id)',
+    // Auth token expiry cleanup
+    'idx_auth_tokens_created' => 'CREATE INDEX IF NOT EXISTS idx_auth_tokens_created ON auth_tokens(created_at)',
 ];
 
 foreach ($indexes as $name => $sql) {

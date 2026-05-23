@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { useApi } from './useApi'
+import { useToastStore } from '../stores/toast'
 import type { MediaItem } from '../stores/gallery'
 
 /**
@@ -14,27 +15,33 @@ interface PaginatedResponse {
 
 export function useGalleryData() {
   const api = useApi()
+  const toastStore = useToastStore()
   const items = ref<MediaItem[]>([])
   const totalPages = ref(0)
   const loading = ref(false)
-  const error = ref<string | null>(null)
+  const loadFailed = ref(false)
 
-  async function fetchPage(mediaType: 'images' | 'videos', page: number, perPage: number, tags?: string) {
+  async function fetchPage(page: number, perPage: number, tags?: string) {
     loading.value = true
-    error.value = null
+    loadFailed.value = false
 
     try {
-      // Single API call returns items + pagination metadata
-      const url = tags
-        ? `/${mediaType}/with-tags/${encodeURIComponent(tags)}/${page}/${perPage}/`
-        : `/${mediaType}/page/${page}/${perPage}/`
+      let url: string
+      if (tags === 'untagged') {
+        url = `/media/untagged/${page}/${perPage}/`
+      } else if (tags) {
+        url = `/media/with-tags/${encodeURIComponent(tags)}/${page}/${perPage}/`
+      } else {
+        url = `/media/page/${page}/${perPage}/`
+      }
 
       const data = await api.get<PaginatedResponse>(url)
 
       items.value = data?.items ?? []
       totalPages.value = data?.total_pages ?? 1
     } catch (e: any) {
-      error.value = e.message || 'Failed to load gallery'
+      toastStore.error(e.message || 'Failed to load gallery')
+      loadFailed.value = true
       items.value = []
       totalPages.value = 0
     } finally {
@@ -42,5 +49,5 @@ export function useGalleryData() {
     }
   }
 
-  return { items, totalPages, loading, error, fetchPage }
+  return { items, totalPages, loading, loadFailed, fetchPage }
 }

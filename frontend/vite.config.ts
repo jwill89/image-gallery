@@ -10,11 +10,7 @@ export default defineConfig({
         target: 'http://localhost',
         changeOrigin: true,
       },
-      '/images': {
-        target: 'http://localhost',
-        changeOrigin: true,
-      },
-      '/videos': {
+      '/media': {
         target: 'http://localhost',
         changeOrigin: true,
       },

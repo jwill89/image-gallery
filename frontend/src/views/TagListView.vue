@@ -3,35 +3,32 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore, type Tag } from '../stores/gallery'
+import { useToastStore } from '../stores/toast'
 import {
   TAG_CATEGORIES,
   getTextClassByName,
   getCategoryClassByName
 } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
-import LoginModal from '../components/LoginModal.vue'
 
 
 interface DisplayTag extends Tag {
   category_name: string
-  image_count: number
-  video_count: number
+  media_count: number
+  implication_count: number
 }
 
 const api = useApi()
 const store = useGalleryStore()
+const toastStore = useToastStore()
 const router = useRouter()
 
 const authenticated = ref(hasAuthToken())
 
-function onAuthenticated() {
-  authenticated.value = true
-}
-
 const allDisplayTags = ref<DisplayTag[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
-const sortKey = ref<'tag_name' | 'category_name' | 'image_count' | 'video_count'>('tag_name')
+const sortKey = ref<'tag_name' | 'category_name' | 'media_count'>('tag_name')
 const sortAsc = ref(true)
 const currentPage = ref(1)
 const pageSize = ref(25)
@@ -127,11 +124,16 @@ function sortIcon(key: string) {
   return sortAsc.value ? 'fa-sort-up' : 'fa-sort-down'
 }
 
+const loadFailed = ref(false)
+
 async function loadTags(showSpinner = true) {
   if (showSpinner) loading.value = true
+  loadFailed.value = false
   try {
     allDisplayTags.value = await api.get<DisplayTag[]>('/tags/display/')
-  } catch {
+  } catch (e: any) {
+    toastStore.error(e.message || 'Failed to load tags')
+    loadFailed.value = true
     allDisplayTags.value = []
   } finally {
     loading.value = false
@@ -168,6 +170,9 @@ function closeModal() {
 }
 
 async function submitForm() {
+  // Strip leading hyphens — they conflict with the negative-tag search prefix convention
+  formTagName.value = formTagName.value.replace(/^-+/, '')
+
   if (!formTagName.value.trim()) {
     formHelp.value = 'Tag name cannot be empty.'
     formHelpClass.value = 'is-danger'
@@ -210,9 +215,9 @@ async function submitForm() {
   }
 }
 
-function searchByTag(tagName: string, mediaType: 'images' | 'videos') {
+function searchByTag(tagName: string) {
   router.push({
-    name: `${mediaType}-with-tags`,
+    name: 'media-with-tags',
     params: { page: 1, perPage: 40, tags: tagName }
   })
 }
@@ -341,10 +346,17 @@ onMounted(() => {
   <section class="section">
     <div class="container">
       <LoadingSpinner v-if="loading" />
+      <div v-else-if="loadFailed" class="has-text-centered py-6">
+        <span class="icon is-large has-text-grey-light">
+          <i class="fa-solid fa-tags fa-3x"></i>
+        </span>
+        <p class="is-size-5 has-text-grey mt-4">Could not load tags. Please try again.</p>
+        <button class="button is-link mt-4" @click="loadTags()">
+          <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <span>Retry</span>
+        </button>
+      </div>
       <template v-else>
-        <!-- Login prompt (inline, not blocking) -->
-        <LoginModal v-if="!authenticated" @authenticated="onAuthenticated" />
-
         <!-- Header with New Tag button -->
         <div class="level mb-4">
           <div class="level-left">
@@ -389,12 +401,10 @@ onMounted(() => {
               <th @click="toggleSort('category_name')" style="cursor:pointer">
                 Category <i class="fas" :class="sortIcon('category_name')"></i>
               </th>
-              <th @click="toggleSort('image_count')" style="cursor:pointer">
-                Images <i class="fas" :class="sortIcon('image_count')"></i>
+              <th @click="toggleSort('media_count')" style="cursor:pointer">
+                Media <i class="fas" :class="sortIcon('media_count')"></i>
               </th>
-              <th @click="toggleSort('video_count')" style="cursor:pointer">
-                Videos <i class="fas" :class="sortIcon('video_count')"></i>
-              </th>
+              <th>Implies</th>
               <th v-if="authenticated">Actions</th>
             </tr>
           </thead>
@@ -411,16 +421,26 @@ onMounted(() => {
                 </span>
               </td>
               <td>
-                <a v-if="tag.image_count > 0" class="has-text-link" @click="searchByTag(tag.tag_name, 'images')">
-                  {{ tag.image_count }}
+                <a v-if="tag.media_count > 0" class="has-text-link" @click="searchByTag(tag.tag_name)">
+                  {{ tag.media_count }}
                 </a>
                 <span v-else>0</span>
               </td>
               <td>
-                <a v-if="tag.video_count > 0" class="has-text-link" @click="searchByTag(tag.tag_name, 'videos')">
-                  {{ tag.video_count }}
-                </a>
-                <span v-else>0</span>
+                <router-link
+                  v-if="tag.implication_count > 0"
+                  :to="{ name: 'tag-implications', params: { tagId: tag.tag_id } }"
+                  class="has-text-link"
+                >
+                  {{ tag.implication_count }}
+                </router-link>
+                <router-link
+                  v-else
+                  :to="{ name: 'tag-implications', params: { tagId: tag.tag_id } }"
+                  class="has-text-grey-light"
+                >
+                  0
+                </router-link>
               </td>
               <td v-if="authenticated">
                 <div class="buttons are-small">

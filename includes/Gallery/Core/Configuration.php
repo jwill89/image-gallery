@@ -4,14 +4,18 @@ namespace Gallery\Core;
 
 /**
  * Configuration class
- * This class contains configuration constants and environment-based settings for the Gallery application.
+ * Loads settings from .env file and environment variables.
+ * The .env file is loaded once on first access; explicit environment
+ * variables (from the OS, Docker, etc.) always take precedence.
  */
 class Configuration
 {
     public const int DEFAULT_PER_PAGE = 40;
 
+    private static bool $envLoaded = false;
+
     /**
-     * Default allowed CORS origins (used if GALLERY_ALLOWED_ORIGINS env var is not set).
+     * Default allowed CORS origins (used if GALLERY_ALLOWED_ORIGINS is not set).
      */
     private const array DEFAULT_ALLOWED_ORIGINS = [
         'http://localhost',
@@ -20,10 +24,81 @@ class Configuration
     ];
 
     /**
-     * Get the admin password from environment variable.
+     * Load the .env file into the environment if it hasn't been loaded yet.
+     * Searches common locations relative to the script entry point.
+     */
+    private static function loadEnv(): void
+    {
+        if (self::$envLoaded) {
+            return;
+        }
+        self::$envLoaded = true;
+
+        // Search for .env in likely locations
+        $candidates = [
+            __DIR__ . '/../../../.env',  // includes/Gallery/Core/ -> project root
+            getcwd() . '/.env',          // current working directory (cron scripts)
+        ];
+
+        foreach ($candidates as $path) {
+            $resolved = realpath($path);
+            if ($resolved !== false && is_file($resolved)) {
+                self::parseEnvFile($resolved);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Parse a .env file and set values via putenv() + $_ENV.
+     * Skips blank lines and comments. Does NOT overwrite existing env vars.
+     */
+    private static function parseEnvFile(string $filePath): void
+    {
+        $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+        if ($lines === false) {
+            return;
+        }
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            // Skip comments
+            if ($line === '' || $line[0] === '#') {
+                continue;
+            }
+
+            // Parse KEY=VALUE
+            $eqPos = strpos($line, '=');
+            if ($eqPos === false) {
+                continue;
+            }
+
+            $key   = trim(substr($line, 0, $eqPos));
+            $value = trim(substr($line, $eqPos + 1));
+
+            // Strip surrounding quotes
+            if (
+                (str_starts_with($value, '"') && str_ends_with($value, '"'))
+                || (str_starts_with($value, "'") && str_ends_with($value, "'"))
+            ) {
+                $value = substr($value, 1, -1);
+            }
+
+            // Don't overwrite existing environment variables
+            if (getenv($key) !== false && getenv($key) !== '') {
+                continue;
+            }
+
+            putenv("{$key}={$value}");
+            $_ENV[$key] = $value;
+        }
+    }
+
+    /**
+     * Get the admin password.
      * Falls back to 'changeme' if not set (development only).
-     *
-     * Set the GALLERY_ADMIN_PASSWORD environment variable in production.
      */
     public static function getAdminPassword(): string
     {
@@ -31,11 +106,14 @@ class Configuration
     }
 
     /**
-     * Resolve an environment variable from all possible sources.
-     * Apache SetEnv with mod_rewrite prefixes vars with REDIRECT_ (possibly multiple times).
+     * Resolve an environment variable.
+     * Loads .env on first call, then checks all standard sources.
+     * Apache SetEnv with mod_rewrite prefixes vars with REDIRECT_.
      */
     private static function getEnvVar(string $name): ?string
     {
+        self::loadEnv();
+
         // Check $_ENV
         if (isset($_ENV[$name]) && $_ENV[$name] !== '') {
             return $_ENV[$name];
@@ -68,8 +146,32 @@ class Configuration
     }
 
     /**
-     * Get allowed CORS origins from environment variable.
-     * The env var GALLERY_ALLOWED_ORIGINS should be a comma-separated list of origins.
+     * Get the Danbooru API login (username).
+     */
+    public static function getDanbooruLogin(): string
+    {
+        return self::getEnvVar('DANBOORU_LOGIN') ?? '';
+    }
+
+    /**
+     * Get the Danbooru API key.
+     */
+    public static function getDanbooruApiKey(): string
+    {
+        return self::getEnvVar('DANBOORU_API_KEY') ?? '';
+    }
+
+    /**
+     * Get the FontAwesome Kit ID.
+     */
+    public static function getFontAwesomeKitId(): string
+    {
+        return self::getEnvVar('FONTAWESOME_KIT_ID') ?? '';
+    }
+
+    /**
+     * Get allowed CORS origins.
+     * The env var should be a comma-separated list of origins.
      * Falls back to default localhost origins if not set.
      */
     public static function getAllowedOrigins(): array

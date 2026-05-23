@@ -12,10 +12,6 @@ use PDO;
  */
 class DatabaseConnection
 {
-    // Path to the SQLite database file
-    private const string PATH_TO_SQLITE_DB = "../db/gallery.db";
-    private const string CRON_PATH_TO_SQLITE_DB = "db/gallery.db";
-
     // Access Through Connection
     private static PDO $conn;
 
@@ -30,11 +26,21 @@ class DatabaseConnection
     }
 
     /**
+     * Get the absolute path to the SQLite database file.
+     * Uses __DIR__ to resolve relative to this file's location,
+     * so it works regardless of the current working directory.
+     */
+    private static function getDatabasePath(): string
+    {
+        // This file is at includes/Gallery/Core/ — go up 3 levels to project root
+        return __DIR__ . '/../../../db/gallery.db';
+    }
+
+    /**
      * getInstance function
      *
      * This function returns a singleton instance of the database connection.
      * It checks if the connection is already established, and if not, it creates a new PDO instance.
-     * It determines the correct path by checking if the database file exists at each location.
      *
      * @return PDO The PDO instance representing the database connection.
      */
@@ -42,15 +48,7 @@ class DatabaseConnection
     {
         // If the connection isn't set, set it.
         if (!isset(self::$conn)) {
-            // Determine the correct path by checking file existence
-            if (file_exists(self::PATH_TO_SQLITE_DB)) {
-                $db_path = self::PATH_TO_SQLITE_DB;
-            } elseif (file_exists(self::CRON_PATH_TO_SQLITE_DB)) {
-                $db_path = self::CRON_PATH_TO_SQLITE_DB;
-            } else {
-                // Fallback: use the default API path (will create the file if needed)
-                $db_path = self::PATH_TO_SQLITE_DB;
-            }
+            $db_path = self::getDatabasePath();
 
             self::$conn = new PDO("sqlite:" . $db_path);
             self::$conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

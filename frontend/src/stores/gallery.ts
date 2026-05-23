@@ -7,13 +7,12 @@ export interface Tag {
   tag_name: string
   category_id: number
   category_name?: string
-  image_count?: number
-  video_count?: number
+  media_count?: number
 }
 
 export interface MediaItem {
-  image_id?: number
-  video_id?: number
+  media_id: number
+  media_type: 'image' | 'video'
   file_name: string
   file_time: number
   hash: string
@@ -26,12 +25,12 @@ export const useGalleryStore = defineStore('gallery', () => {
   // State
   const pageTitle = ref('Gallery')
   const allTags = ref<Tag[]>([])
-  const totalImages = ref(0)
-  const totalVideos = ref(0)
+  const totalMedia = ref(0)
   const blurThumbnails = ref(localStorage.getItem('blurThumbnails') === 'true')
   const loading = ref(false)
   const error = ref<string | null>(null)
   const initialized = ref(false)
+  const lastViewedItemIds = ref<number[]>([])
 
   // Persist blur preference
   watch(blurThumbnails, (val) => {
@@ -47,14 +46,12 @@ export const useGalleryStore = defineStore('gallery', () => {
     initialized.value = true
 
     try {
-      const [tags, imgTotal, vidTotal] = await Promise.all([
+      const [tags, total] = await Promise.all([
         api.get<Tag[]>('/tags/all/'),
-        api.get<number>('/images/total/'),
-        api.get<number>('/videos/total/')
+        api.get<number>('/media/total/')
       ])
       allTags.value = tags ?? []
-      totalImages.value = imgTotal ?? 0
-      totalVideos.value = vidTotal ?? 0
+      totalMedia.value = total ?? 0
     } catch (e) {
       console.error('Initialization error:', e)
       error.value = 'Failed to initialize gallery'
@@ -73,12 +70,8 @@ export const useGalleryStore = defineStore('gallery', () => {
 
   async function refreshTotals() {
     try {
-      const [imgTotal, vidTotal] = await Promise.all([
-        api.get<number>('/images/total/'),
-        api.get<number>('/videos/total/')
-      ])
-      totalImages.value = imgTotal ?? 0
-      totalVideos.value = vidTotal ?? 0
+      const total = await api.get<number>('/media/total/')
+      totalMedia.value = total ?? 0
     } catch (e) {
       console.error('Error refreshing totals:', e)
     }
@@ -91,11 +84,11 @@ export const useGalleryStore = defineStore('gallery', () => {
   return {
     pageTitle,
     allTags,
-    totalImages,
-    totalVideos,
+    totalMedia,
     blurThumbnails,
     loading,
     error,
+    lastViewedItemIds,
     tagNames,
     initialize,
     refreshTags,

@@ -1,0 +1,21 @@
+# Allow large uploads (images/videos up to 100MB)
+php_value upload_max_filesize 100M
+php_value post_max_size 105M
+php_value max_execution_time 120
+
+RewriteEngine On
+
+# Serve built frontend assets from dist/ (JS, CSS, favicon, icons, etc.)
+RewriteCond %{DOCUMENT_ROOT}/dist%{REQUEST_URI} -f
+RewriteRule ^ dist%{REQUEST_URI} [L]
+
+# Serve real files at the root level (media/full/*, media/thumbs/*, etc.)
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Don't touch API requests (api/.htaccess handles its own routing)
+RewriteCond %{REQUEST_URI} ^/api [NC]
+RewriteRule ^ - [L]
+
+# Route all other requests through the front controller for OG tags + SPA fallback
+RewriteRule ^ index.php [QSA,L]
