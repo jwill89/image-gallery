@@ -5,7 +5,6 @@ import { useApi, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore, type Tag } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import {
-  TAG_CATEGORIES,
   getTextClassByName,
   getCategoryClassByName
 } from '../constants/categories'
@@ -351,7 +350,7 @@ onMounted(() => {
           <i class="fa-solid fa-tags fa-3x"></i>
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load tags. Please try again.</p>
-        <button class="button is-link mt-4" @click="loadTags()">
+        <button class="button is-indigo mt-4" @click="loadTags()">
           <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
           <span>Retry</span>
         </button>
@@ -366,10 +365,20 @@ onMounted(() => {
           </div>
           <div class="level-right" v-if="authenticated">
             <div class="level-item">
-              <button class="button is-primary" @click="openNewTagModal">
-                <span class="icon"><i class="fa-solid fa-plus"></i></span>
-                <span>New Tag</span>
-              </button>
+              <div class="buttons">
+                <button class="button is-primary" @click="openNewTagModal">
+                  <span class="icon"><i class="fa-solid fa-plus"></i></span>
+                  <span>New Tag</span>
+                </button>
+                <router-link class="button is-purple is-outlined" :to="{ name: 'tag-categories' }">
+                  <span class="icon"><i class="fa-solid fa-palette"></i></span>
+                  <span>Categories</span>
+                </router-link>
+                <router-link class="button is-cyan is-outlined" :to="{ name: 'danbooru-rules' }">
+                  <span class="icon"><i class="fa-solid fa-file-import"></i></span>
+                  <span>Import Rules</span>
+                </router-link>
+              </div>
             </div>
           </div>
         </div>
@@ -444,10 +453,10 @@ onMounted(() => {
               </td>
               <td v-if="authenticated">
                 <div class="buttons are-small">
-                  <button class="button is-info is-outlined" @click="editTag(tag)" title="Edit">
+                  <button class="button is-cyan is-outlined" @click="editTag(tag)" title="Edit">
                     <span class="icon"><i class="fa-solid fa-pen"></i></span>
                   </button>
-                  <button class="button is-warning is-outlined" @click="openMigrateModal(tag)" title="Migrate">
+                  <button class="button is-amber is-outlined" @click="openMigrateModal(tag)" title="Migrate">
                     <span class="icon"><i class="fa-solid fa-arrow-right-arrow-left"></i></span>
                   </button>
                   <button class="button is-danger is-outlined" @click="openDeleteModal(tag)" title="Delete">
@@ -502,7 +511,7 @@ onMounted(() => {
                 <div class="select is-fullwidth">
                   <select v-model="formCategoryId">
                     <option value="">Select a Category</option>
-                    <option v-for="cat in TAG_CATEGORIES" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+                    <option v-for="cat in store.categories" :key="cat.category_id" :value="cat.category_id">{{ cat.category_name }}</option>
                   </select>
                 </div>
               </div>

@@ -98,6 +98,38 @@ class ResponseCache
 
         $content = (time() + $ttl) . "\n" . $json;
         @file_put_contents($this->path($group, $key), $content, LOCK_EX);
+
+        // Occasionally sweep expired files so entries whose keys are never
+        // requested again (and thus never lazily evicted on read) don't pile up.
+        if (random_int(1, 100) === 1) {
+            $this->gc();
+        }
+    }
+
+    /**
+     * Delete all expired cache files. Cheap, best-effort housekeeping run
+     * probabilistically from set() to keep the cache directory bounded.
+     */
+    private function gc(): void
+    {
+        $files = @glob($this->cacheDir . '*.cache');
+        if (!$files) {
+            return;
+        }
+
+        $now = time();
+        foreach ($files as $f) {
+            $handle = @fopen($f, 'rb');
+            if ($handle === false) {
+                continue;
+            }
+            $firstLine = fgets($handle);
+            fclose($handle);
+
+            if ($firstLine !== false && (int)$firstLine < $now) {
+                @unlink($f);
+            }
+        }
     }
 
     /**

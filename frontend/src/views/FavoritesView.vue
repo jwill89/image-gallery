@@ -92,7 +92,7 @@ watch(() => favorites.count, loadFavorites)
           <i class="fa-solid fa-circle-exclamation fa-3x"></i>
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load favorites.</p>
-        <button class="button is-link mt-4" @click="loadFavorites">
+        <button class="button is-indigo mt-4" @click="loadFavorites">
           <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
           <span>Retry</span>
         </button>

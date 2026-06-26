@@ -1,0 +1,167 @@
+# Gallery
+
+A self-hosted personal media gallery for images, GIFs, and videos, with a
+Danbooru-style tagging system. It supports tag categories and implications,
+include/exclude tag search, automatic tag importing from Danbooru, perceptual
+duplicate detection, favorites, and admin-gated uploads.
+
+> Looking for architecture details and contribution conventions? See
+> **[AGENTS.md](AGENTS.md)** — the in-depth developer/agent guide.
+
+---
+
+## Features
+
+- **Unified media** — images, animated GIFs, and videos in one browsable grid,
+  with pagination or infinite scroll.
+- **Tagging** — categories (with colors, shortcodes, descriptions) and
+  **implications** (tag A auto-applies tag B, transitively).
+- **Search** — filter by multiple tags, including exclusions (`-tag`).
+- **Danbooru import** — auto-fetch tags by MD5 hash with an IQDB visual-similarity
+  fallback; import rules are editable in the UI.
+- **Duplicate detection** — perceptual hashing (LSH → Hamming → SSIM).
+- **Favorites** — stored locally in the browser.
+- **Admin actions** — password-gated uploads and deletes via a bearer token.
+- **PWA caching** — a service worker caches thumbnails and prefetches the next page.
+
+## Tech stack
+
+- **Backend:** PHP 8.5, [Slim 4](https://www.slimframework.com/), SQLite (WAL),
+  [Phinx](https://phinx.org/) migrations, Monolog.
+- **Frontend:** Vue 3 + TypeScript, Pinia, Vue Router, Vite, Bulma.
+- **Media tooling:** `ffmpeg` (thumbnails), PHP GD + `jenssegers/imagehash`
+  (fingerprinting / duplicate detection).
+
+## Requirements
+
+- PHP **8.5+** with `pdo_sqlite`, `curl`, and **GD** (WebP, ideally AVIF) extensions.
+- `ffmpeg` available on the system `PATH` (used for thumbnail generation).
+- Apache with `mod_rewrite` (the included `.htaccess` files drive routing).
+- [Composer](https://getcomposer.org/) and [Node.js](https://nodejs.org/) (for building the frontend).
+
+## Setup
+
+1. **Install backend dependencies**
+
+   ```bash
+   composer install
+   ```
+
+2. **Configure the environment** — create a `.env` file in the project root:
+
+   ```dotenv
+   # Required: admin password for uploads/deletes. Login is refused if this is unset.
+   GALLERY_ADMIN_PASSWORD=your-strong-password
+
+   # Comma-separated list of allowed origins (CORS + CSRF check).
+   GALLERY_ALLOWED_ORIGINS=https://gallery.example.com
+
+   # Public base URL — required for the Danbooru IQDB fallback.
+   GALLERY_URL=https://gallery.example.com
+
+   # Optional: Danbooru API credentials for automatic tag importing.
+   DANBOORU_LOGIN=your-danbooru-username
+   DANBOORU_API_KEY=your-danbooru-api-key
+
+   # Optional: FontAwesome kit ID (injected into <head>).
+   FONTAWESOME_KIT_ID=abcdef1234
+   ```
+
+   Explicit OS/Docker environment variables take precedence over `.env`.
+
+3. **Create the database** — Phinx migrations are the source of truth for the schema:
+
+   ```bash
+   php db/setup.php          # creates db/gallery.db (if needed) and runs all migrations
+   # or, equivalently:
+   php vendor/bin/phinx migrate
+   ```
+
+4. **Build the frontend**
+
+   ```bash
+   cd frontend
+   npm install
+   npm run build            # outputs to ../dist, which index.php serves
+   ```
+
+5. **Serve** the project root with Apache (PHP 8.5). The bundled `.htaccess`
+   serves built assets and real files, routes `/api` to the Slim app, and falls
+   back to `index.php` for the SPA (which also injects Open Graph meta tags).
+
+## Development
+
+Run the Vite dev server (proxies `/api` and `/media` to `http://localhost`, where
+your PHP backend must be running):
+
+```bash
+cd frontend
+npm run dev              # http://localhost:5173
+```
+
+## Deploying
+
+The app is deployed to the DigitalOcean droplet with [`scripts/deploy.ps1`](scripts/deploy.ps1)
+(PowerShell + PuTTY `pscp`/`plink`, using the DigitalOcean `.ppk` key):
+
+```powershell
+.\scripts\deploy.ps1                              # build SPA, push code, composer install, migrate
+.\scripts\deploy.ps1 -SkipBuild                   # redeploy current dist without rebuilding
+.\scripts\deploy.ps1 -SkipComposer -SkipMigrate   # code-only push
+```
+
+It builds the frontend, ships a tarball of code + `dist/` (never the database, `.env`, or
+`media/`), then on the host runs `composer install` and database migrations (via `db/setup.php`,
+which baselines a pre-Phinx database before applying pending migrations), restores ownership to
+`www-data`, clears the API cache, and health-checks the API. A `.deploy-backup/` rollback copy is
+kept on the host unless `-NoBackup` is passed. If a passphrase-protected key is used, load it into
+Pageant first (`pageant.exe <key>`).
+
+## Adding & maintaining media
+
+Drop new files into the `media/` input folder and run the ingest pipeline:
+
+```bash
+php scripts/cron.php     # ingests media/ → media/full/, builds thumbnails + fingerprints,
+                         # and prunes DB rows whose files were deleted
+```
+
+Other maintenance scripts (run from anywhere; they `chdir` to the project root):
+
+```bash
+php scripts/dupes.php                    # scan for duplicates → dupes/dupes-YYYY-MM-DD.json
+php scripts/regenerate-thumbnails.php    # rebuild all thumbnails
+php scripts/regenerate-fingerprints.php  # rebuild perceptual fingerprints
+php scripts/regenerate-metadata.php      # backfill dimensions/duration/file size on existing media
+php scripts/tag_imports.php              # bulk Danbooru tag import
+```
+
+Schedule `cron.php` (and optionally `dupes.php`) via cron/Task Scheduler to
+automatically ingest newly added files.
+
+## Database migrations
+
+The schema lives entirely in `db/migrations/`. To change it:
+
+```bash
+php vendor/bin/phinx create AddSomethingUseful   # scaffold a migration
+php vendor/bin/phinx migrate                      # apply
+php vendor/bin/phinx rollback                      # revert the last migration
+```
+
+Do **not** hand-edit the schema elsewhere — add a migration.
+
+## Security notes
+
+- Set a strong `GALLERY_ADMIN_PASSWORD`. With it unset, login is refused (the
+  insecure `changeme` default can never grant access).
+- Keep `GALLERY_ALLOWED_ORIGINS` tight — it backs both CORS and the CSRF
+  origin check. State-changing requests with no `Origin`/`Referer` are rejected.
+- Login is rate-limited (10 attempts / 5 minutes per IP) on top of the global
+  request limiter.
+- `.env`, `db/gallery.db`, `logs/`, `cache/`, and `dupes/` are gitignored and
+  must never be committed.
+
+## License
+
+See [LICENSE](LICENSE).

@@ -7,6 +7,7 @@ use Jenssegers\ImageHash\ImageHash;
 use Jenssegers\ImageHash\Implementations\PerceptualHash;
 use Gallery\Core\Configuration;
 use Gallery\Core\MediaThumbnail;
+use Gallery\Core\MediaMetadata;
 use Gallery\Storage\MediaStorage;
 use Gallery\Structure\Media;
 
@@ -279,6 +280,13 @@ class MediaCollection
             $this->createFingerprint($media, $source_dir);
         }
 
+        // Extract basic metadata (dimensions, duration, file size) from the source file
+        $meta = MediaMetadata::extract($source_dir . $media->getFileName(), $media->getMediaType());
+        $media->setWidth($meta['width'])
+            ->setHeight($meta['height'])
+            ->setDuration($meta['duration'])
+            ->setFileSize($meta['file_size']);
+
         $media_id = $this->storage->store($media);
 
         if ($media_id > 0) {
@@ -287,6 +295,23 @@ class MediaCollection
         }
 
         return $media->getMediaId();
+    }
+
+    /**
+     * Re-extracts metadata from the media item's full-size file and persists it.
+     * Used by the backfill script to populate metadata on pre-existing rows.
+     */
+    public function refreshMetadata(Media $media): bool
+    {
+        $path = self::MEDIA_DIRECTORY_FULL . $media->getFileName();
+        $meta = MediaMetadata::extract($path, $media->getMediaType());
+
+        $media->setWidth($meta['width'])
+            ->setHeight($meta['height'])
+            ->setDuration($meta['duration'])
+            ->setFileSize($meta['file_size']);
+
+        return $this->storage->updateMetadata($media);
     }
 
     /**

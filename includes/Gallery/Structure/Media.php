@@ -14,6 +14,10 @@ class Media extends AbstractStructure
     private int $file_time = 0;
     private string $hash = '';
     private string $bits_fingerprint = '';
+    private int $width = 0;
+    private int $height = 0;
+    private float $duration = 0.0;   // seconds; 0 for still images
+    private int $file_size = 0;      // bytes
 
     public function getMediaId(): int
     {
@@ -78,6 +82,50 @@ class Media extends AbstractStructure
     public function setBitsFingerprint(string $bits_fingerprint): self
     {
         $this->bits_fingerprint = $bits_fingerprint;
+        return $this;
+    }
+
+    public function getWidth(): int
+    {
+        return $this->width;
+    }
+
+    public function getHeight(): int
+    {
+        return $this->height;
+    }
+
+    public function getDuration(): float
+    {
+        return $this->duration;
+    }
+
+    public function getFileSize(): int
+    {
+        return $this->file_size;
+    }
+
+    public function setWidth(int $width): self
+    {
+        $this->width = $width;
+        return $this;
+    }
+
+    public function setHeight(int $height): self
+    {
+        $this->height = $height;
+        return $this;
+    }
+
+    public function setDuration(float $duration): self
+    {
+        $this->duration = $duration;
+        return $this;
+    }
+
+    public function setFileSize(int $file_size): self
+    {
+        $this->file_size = $file_size;
         return $this;
     }
 

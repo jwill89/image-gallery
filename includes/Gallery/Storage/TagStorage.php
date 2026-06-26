@@ -79,6 +79,51 @@ class TagStorage
     }
 
     /**
+     * Resolves an array of tag names to their IDs in a single query.
+     * Names with no matching tag are omitted. Matching is case-insensitive
+     * (tag_name is COLLATE NOCASE). Returned IDs are de-duplicated.
+     *
+     * @param string[] $tag_names
+     * @return int[] Matched tag IDs (order not guaranteed).
+     */
+    public function retrieveIdsByNames(array $tag_names): array
+    {
+        $names = array_values(array_filter(array_map('trim', $tag_names), fn($n) => $n !== ''));
+        if (empty($names)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($names), '?'));
+        $sql = "SELECT tag_id FROM " . self::MAIN_TABLE . " WHERE tag_name IN ($placeholders)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($names);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * Returns the subset of the given tag IDs that actually exist, in a single
+     * query. Used to validate a batch of tag IDs without an N+1 lookup.
+     *
+     * @param int[] $tag_ids
+     * @return int[] Existing tag IDs (de-duplicated; order not guaranteed).
+     */
+    public function retrieveExistingIds(array $tag_ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $tag_ids), fn($id) => $id > 0)));
+        if (empty($ids)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql = "SELECT tag_id FROM " . self::MAIN_TABLE . " WHERE tag_id IN ($placeholders)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($ids);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
      * Retrieves a tag if it exists, or creates and stores it.
      */
     public function retrieveOrCreate(string $tag_name): Tag
@@ -119,10 +164,9 @@ class TagStorage
     {
         $sql = "SELECT tt.* FROM " . self::MAIN_TABLE . " tt
                     LEFT JOIN " . self::MEDIA_TAG_TABLE . " mt USING (tag_id)
+                    LEFT JOIN " . self::CATEGORIES_TABLE . " tc ON tc.category_id = tt.category_id
                     WHERE mt.media_id = :media_id
-                    ORDER BY CASE WHEN tt.category_id = 1 THEN 10
-                                  ELSE tt.category_id END,
-                            tt.tag_name ASC";
+                    ORDER BY tc.sort_order ASC, tt.tag_name ASC";
 
         $stmt = $this->db->prepare($sql);
         $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
@@ -143,7 +187,7 @@ class TagStorage
              LEFT JOIN " . self::CATEGORIES_TABLE . " tc USING (category_id)
              LEFT JOIN (SELECT tag_id, COUNT(*) AS media_count FROM " . self::MEDIA_TAG_TABLE . " GROUP BY tag_id) mc ON mc.tag_id = t.tag_id
              LEFT JOIN (SELECT tag_id, COUNT(*) AS implication_count FROM tag_implications GROUP BY tag_id) imp ON imp.tag_id = t.tag_id
-             ORDER BY t.category_id ASC, t.tag_name ASC";
+             ORDER BY tc.sort_order ASC, t.tag_name ASC";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute();
@@ -158,17 +202,27 @@ class TagStorage
     {
         $all_tag_ids = $this->resolveImpliedTagIds($tag_ids);
 
-        $sql = "INSERT OR IGNORE INTO " . self::MEDIA_TAG_TABLE . " (media_id, tag_id) VALUES (:media_id, :tag_id)";
-        $stmt = $this->db->prepare($sql);
-        $media_id = $media->getMediaId();
-
-        foreach ($all_tag_ids as $tag_id) {
-            if (!$stmt->execute([':media_id' => $media_id, ':tag_id' => $tag_id])) {
-                return false;
-            }
+        if (empty($all_tag_ids)) {
+            return true;
         }
 
-        return true;
+        $sql = "INSERT OR IGNORE INTO " . self::MEDIA_TAG_TABLE . " (media_id, tag_id) VALUES (:media_id, :tag_id)";
+        $media_id = $media->getMediaId();
+
+        // Wrap the batch insert in a transaction so a mid-loop failure can't
+        // leave the media item with a partial set of (implied) tags applied.
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare($sql);
+            foreach ($all_tag_ids as $tag_id) {
+                $stmt->execute([':media_id' => $media_id, ':tag_id' => $tag_id]);
+            }
+            $this->db->commit();
+            return true;
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            return false;
+        }
     }
 
     /**
@@ -251,16 +305,6 @@ class TagStorage
     // Tag Implication Methods
     // ========================================================================
 
-    public function retrieveImplicationsForTag(int $tag_id): array
-    {
-        $sql = "SELECT implied_tag_id FROM " . self::IMPLICATIONS_TABLE . " WHERE tag_id = :tag_id";
-        $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':tag_id', $tag_id, PDO::PARAM_INT);
-        $stmt->execute();
-
-        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
-    }
-
     public function retrieveAllImplications(): array
     {
         $sql = "SELECT ti.tag_id, t1.tag_name, ti.implied_tag_id, t2.tag_name AS implied_tag_name
@@ -304,27 +348,28 @@ class TagStorage
 
     public function resolveImpliedTagIds(array $tag_ids): array
     {
-        $resolved = [];
-        $queue = $tag_ids;
-
-        while (!empty($queue)) {
-            $current = array_shift($queue);
-
-            if (in_array($current, $resolved, true)) {
-                continue;
-            }
-
-            $resolved[] = $current;
-            $implied = $this->retrieveImplicationsForTag($current);
-
-            foreach ($implied as $impliedId) {
-                if (!in_array($impliedId, $resolved, true)) {
-                    $queue[] = $impliedId;
-                }
-            }
+        $seeds = array_values(array_unique(array_map('intval', $tag_ids)));
+        if (empty($seeds)) {
+            return [];
         }
 
-        return $resolved;
+        // Resolve the full transitive implication closure in a single recursive
+        // query instead of issuing one query per node (BFS). Using UNION (not
+        // UNION ALL) de-duplicates visited ids, which also terminates cycles.
+        $valuesPlaceholders = implode(',', array_fill(0, count($seeds), '(?)'));
+        $sql = "WITH RECURSIVE closure(id) AS (
+                    VALUES {$valuesPlaceholders}
+                    UNION
+                    SELECT ti.implied_tag_id
+                    FROM " . self::IMPLICATIONS_TABLE . " ti
+                    JOIN closure c ON ti.tag_id = c.id
+                )
+                SELECT id FROM closure";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($seeds);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
     }
 
     /**

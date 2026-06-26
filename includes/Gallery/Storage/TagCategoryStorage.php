@@ -44,7 +44,7 @@ class TagCategoryStorage
     public function retrieve(?int $category_id = null): TagCategory|array|null
     {
         $where = ($category_id !== null) ? " WHERE category_id = :category_id" : "";
-        $sql = "SELECT * FROM " . self::MAIN_TABLE . "$where ORDER BY category_name ASC";
+        $sql = "SELECT * FROM " . self::MAIN_TABLE . "$where ORDER BY sort_order ASC, category_name ASC";
 
         $stmt = $this->db->prepare($sql);
 
@@ -103,25 +103,86 @@ class TagCategoryStorage
     }
 
     /**
-     * Saves a tag category to the database.
+     * Saves a tag category to the database (insert or update).
      *
      * @param TagCategory $category The tag category to save.
      *
-     * @return int The ID of the newly saved tag category.
+     * @return int The ID of the saved tag category.
      */
     public function store(TagCategory $category): int
     {
         if (empty($category->getCategoryId())) {
-            $sql = "INSERT INTO " . self::MAIN_TABLE . " (category_name, category_short) VALUES (:category_name, :category_short)";
+            $sql = "INSERT INTO " . self::MAIN_TABLE
+                 . " (category_name, category_short, color, description, sort_order)"
+                 . " VALUES (:category_name, :category_short, :color, :description, :sort_order)";
             $stmt = $this->db->prepare($sql);
             $stmt->bindValue(':category_name', $category->getCategoryName(), PDO::PARAM_STR);
             $stmt->bindValue(':category_short', $category->getCategoryShort(), PDO::PARAM_STR);
+            $stmt->bindValue(':color', $category->getColor(), PDO::PARAM_STR);
+            $stmt->bindValue(':description', $category->getDescription(), PDO::PARAM_STR);
+            $stmt->bindValue(':sort_order', $category->getSortOrder(), PDO::PARAM_INT);
 
             $stmt->execute();
             $category->setCategoryId((int)$this->db->lastInsertId());
+        } else {
+            $sql = "UPDATE " . self::MAIN_TABLE
+                 . " SET category_name = :category_name, category_short = :category_short,"
+                 . " color = :color, description = :description, sort_order = :sort_order"
+                 . " WHERE category_id = :category_id";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':category_name', $category->getCategoryName(), PDO::PARAM_STR);
+            $stmt->bindValue(':category_short', $category->getCategoryShort(), PDO::PARAM_STR);
+            $stmt->bindValue(':color', $category->getColor(), PDO::PARAM_STR);
+            $stmt->bindValue(':description', $category->getDescription(), PDO::PARAM_STR);
+            $stmt->bindValue(':sort_order', $category->getSortOrder(), PDO::PARAM_INT);
+            $stmt->bindValue(':category_id', $category->getCategoryId(), PDO::PARAM_INT);
+            $stmt->execute();
         }
 
         return $category->getCategoryId();
+    }
+
+    /**
+     * Counts the number of tags belonging to a category.
+     */
+    public function countTagsInCategory(int $categoryId): int
+    {
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM " . self::TAGS_TABLE . " WHERE category_id = :cid");
+        $stmt->bindValue(':cid', $categoryId, PDO::PARAM_INT);
+        $stmt->execute();
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Retrieves all category IDs from the database.
+     *
+     * @return int[] Array of valid category IDs.
+     */
+    public function retrieveAllIds(): array
+    {
+        $stmt = $this->db->query("SELECT category_id FROM " . self::MAIN_TABLE . " ORDER BY category_id");
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * Checks if a category name or shortcode already exists (excluding a given ID).
+     */
+    public function nameOrShortExists(string $name, string $short, int $excludeId = 0): array
+    {
+        $conflicts = [];
+        $stmt = $this->db->prepare(
+            "SELECT category_id FROM " . self::MAIN_TABLE . " WHERE category_name = :n COLLATE NOCASE AND category_id != :eid"
+        );
+        $stmt->execute([':n' => $name, ':eid' => $excludeId]);
+        if ($stmt->fetchColumn()) $conflicts[] = 'name';
+
+        $stmt = $this->db->prepare(
+            "SELECT category_id FROM " . self::MAIN_TABLE . " WHERE category_short = :s COLLATE NOCASE AND category_id != :eid"
+        );
+        $stmt->execute([':s' => $short, ':eid' => $excludeId]);
+        if ($stmt->fetchColumn()) $conflicts[] = 'short';
+
+        return $conflicts;
     }
 
     /**

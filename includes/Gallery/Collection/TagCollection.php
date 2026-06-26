@@ -31,9 +31,32 @@ class TagCollection
         return $this->storage->retrieveByName($tag_name);
     }
 
+    /**
+     * Resolve multiple tag names to IDs in a single query.
+     * Unknown names are omitted; returned IDs are de-duplicated.
+     *
+     * @param string[] $tag_names
+     * @return int[]
+     */
+    public function getIdsByNames(array $tag_names): array
+    {
+        return $this->storage->retrieveIdsByNames($tag_names);
+    }
+
     public function getOrCreate(string $tag_name): Tag
     {
         return $this->storage->retrieveOrCreate($tag_name);
+    }
+
+    /**
+     * Returns the subset of the given tag IDs that exist, in a single query.
+     *
+     * @param int[] $tag_ids
+     * @return int[]
+     */
+    public function getExistingIds(array $tag_ids): array
+    {
+        return $this->storage->retrieveExistingIds($tag_ids);
     }
 
     public function getAll(): array

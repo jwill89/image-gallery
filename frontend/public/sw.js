@@ -18,6 +18,7 @@ const THUMB_CACHE   = `gallery-thumbs-${CACHE_VERSION}`;
 const API_CACHE     = `gallery-api-${CACHE_VERSION}`;
 
 const MAX_THUMB_ENTRIES = 2000;
+const MAX_STATIC_ENTRIES = 100;
 
 // ─── Install ────────────────────────────────────────────────────────
 
@@ -96,9 +97,13 @@ async function cacheFirst(request, cacheName) {
       const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
 
-      // Evict old entries from thumbnail cache
+      // Evict old entries. Content-hashed asset filenames mean that across
+      // deploys the static cache would otherwise grow without bound, since the
+      // cache name (and thus the activate-time purge) never changes.
       if (cacheName === THUMB_CACHE) {
         trimCache(cacheName, MAX_THUMB_ENTRIES);
+      } else if (cacheName === STATIC_CACHE) {
+        trimCache(cacheName, MAX_STATIC_ENTRIES);
       }
     }
     return response;

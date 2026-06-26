@@ -69,6 +69,11 @@ async function loadPage() {
 async function prefetchAdjacentPage(page: number, perPage: number, tags?: string) {
   if (page < 1 || page > totalPages.value) return
 
+  // Skip the extra round-trip on metered/slow connections — prefetching the
+  // next page (to warm its thumbnails) isn't worth the data there.
+  const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+  if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? '')) return
+
   try {
     let url: string
     if (tags === 'untagged') {
@@ -184,7 +189,7 @@ function onCardClick(id: number) {
         <p class="is-size-5 has-text-grey mt-4">
           {{ loadFailed ? 'Could not load the gallery. Please try again.' : 'No items found.' }}
         </p>
-        <button v-if="loadFailed" class="button is-link mt-4" @click="loadPage">
+        <button v-if="loadFailed" class="button is-indigo mt-4" @click="loadPage">
           <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
           <span>Retry</span>
         </button>

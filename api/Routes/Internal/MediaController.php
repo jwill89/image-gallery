@@ -34,9 +34,10 @@ class MediaController extends AbstractController
         $id = $this->parseParameters($args, 'media_id', null);
 
         if ($id === null) {
-            return $this->cachedSuccess($response, 'media', 'all', ResponseCache::TTL_MEDIUM, function () {
-                return $this->media_collection->getAll();
-            });
+            // No ID supplied. Returning the entire media table here would be a
+            // heavy, publicly-cacheable dump (and an easy amplification target);
+            // callers must use the paginated endpoints instead.
+            return $this->error($response, 'MediaIDRequired', 400, 'A media ID is required. Use the paginated endpoints to list media.');
         }
 
         if (!is_numeric($id) || $id <= 0) {

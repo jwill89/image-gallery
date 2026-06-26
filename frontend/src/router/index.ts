@@ -50,6 +50,18 @@ const router = createRouter({
       component: () => import('../views/TagListView.vue')
     },
     {
+      path: '/tags/categories',
+      name: 'tag-categories',
+      meta: { title: 'Tag Categories' },
+      component: () => import('../views/TagCategoriesView.vue')
+    },
+    {
+      path: '/tags/danbooru-rules',
+      name: 'danbooru-rules',
+      meta: { title: 'Danbooru Import Rules' },
+      component: () => import('../views/DanbooruRulesView.vue')
+    },
+    {
       path: '/tags/:tagId',
       name: 'tag-implications',
       meta: { title: 'Tag Implications' },

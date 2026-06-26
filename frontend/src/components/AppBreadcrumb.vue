@@ -34,29 +34,37 @@ const crumbs = computed<Crumb[]>(() => {
   if (!name) return []
 
   const list: Crumb[] = [
-    { label: 'Gallery', icon: 'fa-solid fa-house', to: { name: 'media', params: { page: 1, perPage: 40 } } }
+    { label: 'Gallery', icon: 'fa-solid fa-house' }
   ]
 
-  if (name === 'media' || name === 'media-with-tags') {
-    list.push({ label: 'Media', icon: 'fa-solid fa-images', ...(name === 'media-with-tags' ? { to: { name: 'media', params: { page: 1, perPage: String(route.params.perPage || 40) } } } : {}) })
-    if (name === 'media-with-tags') {
-      if (route.params.tags === 'untagged') {
-        list.push({ label: 'Untagged', icon: 'fa-solid fa-ban' })
-      } else {
-        const { label, title } = formatTagLabel(route.params.tags as string)
-        list.push({ label, title, icon: 'fa-solid fa-filter' })
-      }
+  if (name === 'media') {
+    list.push({ label: 'Media', icon: 'fa-solid fa-images' })
+  } else if (name === 'media-with-tags') {
+    list.push({ label: 'Media', icon: 'fa-solid fa-images', to: { name: 'media', params: { page: 1, perPage: String(route.params.perPage || 40) } } })
+    if (route.params.tags === 'untagged') {
+      list.push({ label: 'Untagged', icon: 'fa-solid fa-ban' })
+    } else {
+      const { label, title } = formatTagLabel(route.params.tags as string)
+      list.push({ label, title, icon: 'fa-solid fa-filter' })
     }
   } else if (name === 'media-tags') {
     list.push({ label: 'Media', icon: 'fa-solid fa-images', to: { name: 'media', params: { page: 1, perPage: 40 } } })
     list.push({ label: `Media #${route.params.id}`, icon: 'fa-solid fa-circle-info' })
   } else if (name === 'tags') {
     list.push({ label: 'Tags', icon: 'fa-solid fa-tags' })
+  } else if (name === 'tag-categories') {
+    list.push({ label: 'Tags', icon: 'fa-solid fa-tags', to: { name: 'tags' } })
+    list.push({ label: 'Categories', icon: 'fa-solid fa-palette' })
+  } else if (name === 'danbooru-rules') {
+    list.push({ label: 'Tags', icon: 'fa-solid fa-tags', to: { name: 'tags' } })
+    list.push({ label: 'Import Rules', icon: 'fa-solid fa-file-import' })
   } else if (name === 'tag-implications') {
     list.push({ label: 'Tags', icon: 'fa-solid fa-tags', to: { name: 'tags' } })
     const tagId = Number(route.params.tagId)
     const tag = store.allTags.find(t => t.tag_id === tagId)
     list.push({ label: tag?.tag_name ?? `Tag #${tagId}`, icon: 'fa-solid fa-link' })
+  } else if (name === 'favorites') {
+    list.push({ label: 'Favorites', icon: 'fa-solid fa-heart' })
   } else if (name === 'upload') {
     list.push({ label: 'Upload', icon: 'fa-solid fa-cloud-arrow-up' })
   } else if (name === 'duplicates') {

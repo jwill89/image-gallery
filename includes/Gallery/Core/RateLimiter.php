@@ -50,21 +50,25 @@ class RateLimiter
         $this->db->beginTransaction();
 
         try {
-            // Prune all expired entries globally (not just this IP)
+            // Prune all expired entries globally (not just this IP) as housekeeping.
             $this->db->prepare('DELETE FROM rate_limits WHERE requested_at < :cutoff')
                 ->execute([':cutoff' => $cutoff]);
 
-            // Count current window for this IP
-            $stmt = $this->db->prepare('SELECT COUNT(*) FROM rate_limits WHERE ip = :ip');
-            $stmt->execute([':ip' => $ip]);
+            // Count this IP's requests within THIS limiter's own window. The
+            // explicit time filter is essential: multiple limiters with
+            // different windows (e.g. the global 60s limiter and the 300s login
+            // limiter) share this table, and the global prune above would
+            // otherwise wipe the longer window's rows and undercount.
+            $stmt = $this->db->prepare('SELECT COUNT(*) FROM rate_limits WHERE ip = :ip AND requested_at >= :cutoff');
+            $stmt->execute([':ip' => $ip, ':cutoff' => $cutoff]);
             $count = (int) $stmt->fetchColumn();
 
             if ($count >= $this->maxRequests) {
                 $this->db->commit();
 
-                // Find earliest entry to calculate retry_after
-                $stmt = $this->db->prepare('SELECT MIN(requested_at) FROM rate_limits WHERE ip = :ip');
-                $stmt->execute([':ip' => $ip]);
+                // Find earliest in-window entry to calculate retry_after
+                $stmt = $this->db->prepare('SELECT MIN(requested_at) FROM rate_limits WHERE ip = :ip AND requested_at >= :cutoff');
+                $stmt->execute([':ip' => $ip, ':cutoff' => $cutoff]);
                 $earliest = (int) $stmt->fetchColumn();
                 $retryAfter = max(1, ($earliest + $this->windowSeconds) - time());
 

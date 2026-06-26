@@ -52,6 +52,12 @@ class DatabaseConnection
 
             self::$conn = new PDO("sqlite:" . $db_path);
             self::$conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+            // Per-connection PRAGMAs. journal_mode (WAL) is persisted in the
+            // database header, but re-asserting it is a cheap no-op and keeps
+            // setup self-contained. page_size was dropped: it only takes effect
+            // on database creation (before any table exists) or a VACUUM, so
+            // running it on every connection to an existing DB did nothing.
             self::$conn->exec('PRAGMA journal_mode=WAL');
             self::$conn->exec('PRAGMA foreign_keys=ON');
             self::$conn->exec('PRAGMA synchronous=NORMAL');
@@ -59,7 +65,6 @@ class DatabaseConnection
             self::$conn->exec('PRAGMA temp_store=MEMORY');
             self::$conn->exec('PRAGMA mmap_size=268435456');
             self::$conn->exec('PRAGMA busy_timeout=5000');
-            self::$conn->exec('PRAGMA page_size=4096');
         }
 
         return self::$conn;

@@ -33,7 +33,19 @@ const filteredTags = computed(() => {
   let results = store.allTags.filter(tag => !usedIds.has(tag.tag_id))
 
   if (query.length > 0) {
-    results = results.filter(tag => tag.tag_name.toLowerCase().includes(query))
+    results = results
+      .filter(tag => tag.tag_name.toLowerCase().includes(query))
+      .sort((a, b) => {
+        const aName = a.tag_name.toLowerCase()
+        const bName = b.tag_name.toLowerCase()
+        const aExact = aName === query
+        const bExact = bName === query
+        if (aExact !== bExact) return aExact ? -1 : 1
+        const aPrefix = aName.startsWith(query)
+        const bPrefix = bName.startsWith(query)
+        if (aPrefix !== bPrefix) return aPrefix ? -1 : 1
+        return aName.localeCompare(bName)
+      })
   }
 
   return results.slice(0, 20)

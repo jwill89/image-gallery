@@ -116,6 +116,26 @@ class UploadController extends AbstractController
                 continue;
             }
 
+            // Defense-in-depth: verify the file's actual content type, not just
+            // its extension, so a script/polyglot disguised with a media
+            // extension can't land in the publicly-served media directory.
+            if (class_exists('finfo')) {
+                $mime = (string) (new \finfo(FILEINFO_MIME_TYPE))->file($dest_path);
+                if (!str_starts_with($mime, 'image/') && !str_starts_with($mime, 'video/')) {
+                    unlink($dest_path);
+                    $results[] = [
+                        'file_name' => $original_name,
+                        'status' => 'error',
+                        'message' => 'File content is not a valid image or video.',
+                    ];
+                    $this->logger->warning('Upload rejected: content type mismatch', [
+                        'file' => $original_name,
+                        'detected_mime' => $mime,
+                    ]);
+                    continue;
+                }
+            }
+
             // Compute MD5 hash and check for duplicates
             $md5 = md5_file($dest_path);
             $existing_id = $this->media_collection->findIdByHash($md5);
@@ -154,9 +174,10 @@ class UploadController extends AbstractController
                     // Fetch and apply Danbooru tags if requested
                     if ($tagger !== null) {
                         try {
-                            $tagResult = $tagger->importTagsForMedia($id, $md5);
+                            $tagResult = $tagger->importTagsForMedia($id, $md5, $safe_name);
                             $result_entry['tags_found'] = $tagResult['found'];
                             $result_entry['tags_applied'] = $tagResult['tags_applied'];
+                            $result_entry['tags_method'] = $tagResult['method'];
                             $totalTagsApplied += $tagResult['tags_applied'];
                         } catch (\Throwable $e) {
                             $this->logger->warning('Danbooru tag import failed', [

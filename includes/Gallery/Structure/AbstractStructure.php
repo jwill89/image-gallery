@@ -15,6 +15,14 @@ use ReflectionClass;
 abstract class AbstractStructure implements JsonSerializable
 {
     /**
+     * Cached ReflectionProperty lists keyed by concrete class name, so each
+     * class is reflected only once rather than on every jsonSerialize() call.
+     *
+     * @var array<class-string, \ReflectionProperty[]>
+     */
+    private static array $propertyCache = [];
+
+    /**
      * Constructor method
      *
      * @param array $params An associative array of properties to set on the object.
@@ -51,11 +59,14 @@ abstract class AbstractStructure implements JsonSerializable
      */
     public function jsonSerialize(): array
     {
-        $reflection_class = new ReflectionClass($this);
-        $properties = $reflection_class->getProperties();
-        $data = [];
+        $class = static::class;
 
-        foreach ($properties as $property) {
+        if (!isset(self::$propertyCache[$class])) {
+            self::$propertyCache[$class] = (new ReflectionClass($this))->getProperties();
+        }
+
+        $data = [];
+        foreach (self::$propertyCache[$class] as $property) {
             $data[$property->getName()] = $property->getValue($this);
         }
 

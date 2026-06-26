@@ -48,9 +48,11 @@ class DuplicatesController extends AbstractController
 
         $latest_file = $files[0];
         $content = file_get_contents($latest_file);
-        $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
 
-        if ($data === null) {
+        try {
+            $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            $this->logger->error('Duplicate report is corrupted', ['file' => basename($latest_file), 'error' => $e->getMessage()]);
             return $this->error($response, 'InvalidReport', 500, 'The latest report file is corrupted or unreadable.');
         }
 
@@ -68,14 +70,14 @@ class DuplicatesController extends AbstractController
             // Table may not exist yet — skip filtering
         }
 
-        // Enrich matches with media data
-        $enriched_matches = [];
+        // Filter out dismissed pairs first, then batch-load all referenced media
+        // in a single query to avoid an N+1 lookup (2 queries per match pair).
+        $pairs = [];
+        $neededIds = [];
         if (isset($data['matches']) && is_array($data['matches'])) {
             foreach ($data['matches'] as $match) {
-                $id1 = $match[0];
-                $id2 = $match[1];
-                $distance = $match[2] ?? null;
-                $ssim = $match[3] ?? null;
+                $id1 = (int) $match[0];
+                $id2 = (int) $match[1];
 
                 // Skip dismissed pairs
                 $a = min($id1, $id2);
@@ -84,32 +86,43 @@ class DuplicatesController extends AbstractController
                     continue;
                 }
 
-                try {
-                    $media1 = $this->media_collection->get($id1);
-                    $media2 = $this->media_collection->get($id2);
-
-                    if ($media1 === null || $media2 === null) {
-                        continue;
-                    }
-
-                    $enriched_matches[] = [
-                        'media_1' => [
-                            'media_id' => $id1,
-                            'file_name' => $media1->getFileName(),
-                            'hash' => $media1->getHash(),
-                        ],
-                        'media_2' => [
-                            'media_id' => $id2,
-                            'file_name' => $media2->getFileName(),
-                            'hash' => $media2->getHash(),
-                        ],
-                        'distance' => $distance,
-                        'ssim' => $ssim,
-                    ];
-                } catch (\Throwable $e) {
-                    continue;
-                }
+                $pairs[] = [$id1, $id2, $match[2] ?? null, $match[3] ?? null];
+                $neededIds[$id1] = true;
+                $neededIds[$id2] = true;
             }
+        }
+
+        // Single batched fetch, indexed by media_id for O(1) lookup
+        $mediaById = [];
+        if (!empty($neededIds)) {
+            foreach ($this->media_collection->getByIds(array_keys($neededIds)) as $media) {
+                $mediaById[$media->getMediaId()] = $media;
+            }
+        }
+
+        $enriched_matches = [];
+        foreach ($pairs as [$id1, $id2, $distance, $ssim]) {
+            $media1 = $mediaById[$id1] ?? null;
+            $media2 = $mediaById[$id2] ?? null;
+
+            if ($media1 === null || $media2 === null) {
+                continue;
+            }
+
+            $enriched_matches[] = [
+                'media_1' => [
+                    'media_id' => $id1,
+                    'file_name' => $media1->getFileName(),
+                    'hash' => $media1->getHash(),
+                ],
+                'media_2' => [
+                    'media_id' => $id2,
+                    'file_name' => $media2->getFileName(),
+                    'hash' => $media2->getHash(),
+                ],
+                'distance' => $distance,
+                'ssim' => $ssim,
+            ];
         }
 
         $result = [

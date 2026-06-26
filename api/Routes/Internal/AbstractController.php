@@ -92,8 +92,8 @@ abstract class AbstractController
     }
 
     /**
-     * Resolves an array of tag names to an array of tag IDs.
-     * Invalid/non-existent tags are silently skipped.
+     * Resolves an array of tag names to an array of tag IDs in a single query.
+     * Invalid/non-existent tags are silently skipped; IDs are de-duplicated.
      *
      * @param array $tag_names Array of tag name strings.
      * @param TagCollection $tag_collection The tag collection to look up tags.
@@ -102,14 +102,7 @@ abstract class AbstractController
      */
     protected function resolveTagIds(array $tag_names, TagCollection $tag_collection): array
     {
-        $tag_ids = [];
-        foreach ($tag_names as $tag_name) {
-            $tag = $tag_collection->getByName($tag_name);
-            if ($tag !== null) {
-                $tag_ids[] = $tag->getTagId();
-            }
-        }
-        return $tag_ids;
+        return $tag_collection->getIdsByNames($tag_names);
     }
 
     /**

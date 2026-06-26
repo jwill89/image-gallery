@@ -30,6 +30,22 @@ const mediaUrl = ref('')
 const mediaReady = ref(false)
 const selectedTagIds = ref<number[]>([])
 
+// Danbooru fetch modal
+const showDanbooruModal = ref(false)
+const danbooruMode = ref<'auto' | 'post_id'>('auto')
+const danbooruPostId = ref('')
+const danbooruFetching = ref(false)
+const danbooruResult = ref<{ method: string; tags_applied: number; tags_created: number } | null>(null)
+const danbooruError = ref('')
+
+// Touch/swipe state
+let touchStartX = 0
+let touchStartY = 0
+let touchStartTime = 0
+const SWIPE_THRESHOLD = 50  // min px distance
+const SWIPE_MAX_TIME = 400  // max ms for a swipe
+const SWIPE_ANGLE_LIMIT = 30 // max degrees from horizontal
+
 const appliedTagIds = computed(() => tags.value.map(t => t.tag_id))
 
 const formattedDate = computed(() => {
@@ -47,6 +63,32 @@ const fullPath = computed(() => {
 })
 
 const isVideoItem = computed(() => mediaItem.value?.media_type === 'video')
+
+const dimensions = computed(() => {
+  const w = mediaItem.value?.width ?? 0
+  const h = mediaItem.value?.height ?? 0
+  return w > 0 && h > 0 ? `${w} × ${h}` : ''
+})
+
+const formattedDuration = computed(() => {
+  const secs = mediaItem.value?.duration ?? 0
+  if (!secs || secs <= 0) return ''
+  const total = Math.round(secs)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
+})
+
+const formattedFileSize = computed(() => {
+  const bytes = mediaItem.value?.file_size ?? 0
+  if (!bytes || bytes <= 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+})
 
 onMounted(load)
 watch(() => props.mediaId, load)
@@ -81,6 +123,7 @@ const isVideo = (url: string) => {
   return ext && ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
+const hasGalleryContext = computed(() => store.lastViewedItemIds.length > 0 && currentIndex.value >= 0)
 const currentIndex = computed(() => {
   return store.lastViewedItemIds.indexOf(props.mediaId)
 })
@@ -136,6 +179,56 @@ async function deleteMedia() {
   }
 }
 
+function openDanbooruModal() {
+  danbooruMode.value = 'auto'
+  danbooruPostId.value = ''
+  danbooruResult.value = null
+  danbooruError.value = ''
+  showDanbooruModal.value = true
+}
+
+async function fetchDanbooruTags() {
+  danbooruFetching.value = true
+  danbooruResult.value = null
+  danbooruError.value = ''
+
+  try {
+    const payload: Record<string, number> = { media_id: props.mediaId }
+    if (danbooruMode.value === 'post_id') {
+      const id = parseInt(danbooruPostId.value.trim(), 10)
+      if (!id || id <= 0) {
+        danbooruError.value = 'Please enter a valid Danbooru post ID.'
+        danbooruFetching.value = false
+        return
+      }
+      payload.danbooru_post_id = id
+    }
+
+    const data = await api.post<{
+      tags: typeof tags.value
+      all_tags: typeof store.allTags
+      method: string
+      tags_applied: number
+      tags_created: number
+    }>('/tags/danbooru-fetch/', payload)
+
+    tags.value = data.tags ?? []
+    store.allTags = data.all_tags ?? store.allTags
+    danbooruResult.value = {
+      method: data.method,
+      tags_applied: data.tags_applied,
+      tags_created: data.tags_created,
+    }
+    toastStore.success(`Imported ${data.tags_applied} tags from Danbooru (via ${data.method}).`)
+  } catch (e: any) {
+    danbooruError.value = e.message || 'Failed to fetch tags from Danbooru.'
+  } finally {
+    danbooruFetching.value = false
+  }
+}
+
+// ── Keyboard navigation ────────────────────────────────────
+
 function onGlobalKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
   if (e.key === 'ArrowLeft') navigatePrev()
@@ -144,6 +237,36 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
 onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
+
+// ── Touch/swipe navigation for mobile ──────────────────────
+
+function onTouchStart(e: TouchEvent) {
+  if (e.touches.length !== 1) return
+  touchStartX = e.touches[0].clientX
+  touchStartY = e.touches[0].clientY
+  touchStartTime = Date.now()
+}
+
+function onTouchEnd(e: TouchEvent) {
+  if (e.changedTouches.length !== 1) return
+
+  const dx = e.changedTouches[0].clientX - touchStartX
+  const dy = e.changedTouches[0].clientY - touchStartY
+  const elapsed = Date.now() - touchStartTime
+
+  // Must be fast enough and far enough horizontally
+  if (elapsed > SWIPE_MAX_TIME || Math.abs(dx) < SWIPE_THRESHOLD) return
+
+  // Must be mostly horizontal (not a scroll gesture)
+  const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI))
+  if (angle > SWIPE_ANGLE_LIMIT && angle < (180 - SWIPE_ANGLE_LIMIT)) return
+
+  if (dx < 0) {
+    navigateNext()  // swipe left → next
+  } else {
+    navigatePrev()  // swipe right → prev
+  }
+}
 </script>
 
 <template>
@@ -156,11 +279,11 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load media details.</p>
         <div class="buttons is-centered mt-4">
-          <button class="button is-link" @click="load">
+          <button class="button is-indigo" @click="load">
             <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
             <span>Retry</span>
           </button>
-          <button class="button" @click="backToGallery">
+          <button class="button is-indigo is-outlined" @click="backToGallery">
             <span class="icon"><i class="fa-solid fa-backward"></i></span>
             <span>Back to Gallery</span>
           </button>
@@ -169,7 +292,12 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
       <template v-else>
         <div class="columns">
           <div class="column is-three-fifths">
-            <figure class="image tags-page-img">
+            <figure
+              ref="mediaContainer"
+              class="image tags-page-img"
+              @touchstart.passive="onTouchStart"
+              @touchend.passive="onTouchEnd"
+            >
               <div v-if="!mediaReady" class="media-placeholder">
                 <span class="icon is-large has-text-grey">
                   <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
@@ -193,35 +321,54 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           </div>
 
           <div class="column">
-            <div class="buttons mb-4">
-              <button class="button is-link" @click="backToGallery">
-                <span class="icon"><i class="fa-solid fa-backward"></i></span>
-                <span>Back to Gallery</span>
-              </button>
-              <button class="button" :disabled="prevId == null" @click="navigatePrev" title="Previous (&larr;)">
-                <span class="icon"><i class="fa-solid fa-arrow-left"></i></span>
-              </button>
-              <button class="button" :disabled="nextId == null" @click="navigateNext" title="Next (&rarr;)">
-                <span class="icon"><i class="fa-solid fa-arrow-right"></i></span>
-              </button>
-              <button
-                class="button"
-                :class="favorites.isFavorite(mediaId) ? 'is-danger' : 'is-light'"
-                @click="favorites.toggle(mediaId)"
-                :title="favorites.isFavorite(mediaId) ? 'Remove from favorites' : 'Add to favorites'"
-              >
-                <span class="icon">
-                  <i :class="favorites.isFavorite(mediaId) ? 'fa-solid fa-heart' : 'fa-regular fa-heart'"></i>
-                </span>
-              </button>
-              <button
-                v-if="authenticated"
-                class="button is-danger is-outlined"
-                @click="showDeleteModal = true"
-                title="Delete this media"
-              >
-                <span class="icon"><i class="fa-solid fa-trash"></i></span>
-              </button>
+            <!-- Toolbar: navigation on the left, actions on the right -->
+            <div class="media-toolbar">
+              <div class="toolbar-nav">
+                <button class="button is-indigo" @click="backToGallery">
+                  <span class="icon"><i class="fa-solid fa-backward"></i></span>
+                  <span>Back</span>
+                </button>
+                <div v-if="hasGalleryContext" class="field has-addons mb-0">
+                  <div class="control">
+                    <button class="button is-indigo is-outlined" :disabled="prevId == null" @click="navigatePrev" title="Previous (← or swipe right)">
+                      <span class="icon"><i class="fa-solid fa-arrow-left"></i></span>
+                    </button>
+                  </div>
+                  <div class="control">
+                    <button class="button is-indigo is-outlined" :disabled="nextId == null" @click="navigateNext" title="Next (→ or swipe left)">
+                      <span class="icon"><i class="fa-solid fa-arrow-right"></i></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="toolbar-actions">
+                <button
+                  class="button"
+                  :class="favorites.isFavorite(mediaId) ? 'is-pink' : 'is-pink is-outlined'"
+                  @click="favorites.toggle(mediaId)"
+                  :title="favorites.isFavorite(mediaId) ? 'Remove from favorites' : 'Add to favorites'"
+                >
+                  <span class="icon">
+                    <i :class="favorites.isFavorite(mediaId) ? 'fa-solid fa-heart' : 'fa-regular fa-heart'"></i>
+                  </span>
+                </button>
+                <button
+                  v-if="authenticated"
+                  class="button is-cyan"
+                  @click="openDanbooruModal"
+                  title="Fetch tags from Danbooru"
+                >
+                  <span class="icon"><i class="fa-solid fa-download"></i></span>
+                </button>
+                <button
+                  v-if="authenticated"
+                  class="button is-danger is-outlined"
+                  @click="showDeleteModal = true"
+                  title="Delete this media"
+                >
+                  <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                </button>
+              </div>
             </div>
 
             <!-- Media Details -->
@@ -231,6 +378,18 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
                 <tr>
                   <th>Date Added</th>
                   <td>{{ formattedDate }}</td>
+                </tr>
+                <tr v-if="dimensions">
+                  <th>Dimensions</th>
+                  <td>{{ dimensions }}</td>
+                </tr>
+                <tr v-if="formattedDuration">
+                  <th>Duration</th>
+                  <td>{{ formattedDuration }}</td>
+                </tr>
+                <tr v-if="formattedFileSize">
+                  <th>File Size</th>
+                  <td>{{ formattedFileSize }}</td>
                 </tr>
                 <tr>
                   <th>MD5 Hash</th>
@@ -263,9 +422,13 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
             </TagMultiSelect>
             <p class="help">
               Add tags. Multiple tags are allowed.
-              <a @click.prevent="showHelpModal = true" style="cursor:pointer">Click here</a>
+              <a @click.prevent="showHelpModal = !showHelpModal" style="cursor:pointer">
+                {{ showHelpModal ? 'Hide tag help' : 'Show tag help' }}
+              </a>
               to read more about tag categories, differentiated by colors.
             </p>
+
+            <TagShortcodeModal v-if="showHelpModal" class="mt-3" @close="showHelpModal = false" />
 
             <hr />
 
@@ -286,12 +449,6 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           </div>
         </div>
       </template>
-
-      <!-- Shortcode Help Modal -->
-      <div class="modal" :class="{ 'is-active': showHelpModal }">
-        <div class="modal-background" @click="showHelpModal = false"></div>
-        <TagShortcodeModal @close="showHelpModal = false" />
-      </div>
 
       <!-- Delete Confirmation Modal -->
       <div class="modal" :class="{ 'is-active': showDeleteModal }">
@@ -317,6 +474,88 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           </footer>
         </div>
       </div>
+      <!-- Danbooru Fetch Modal -->
+      <div class="modal" :class="{ 'is-active': showDanbooruModal }">
+        <div class="modal-background" @click="showDanbooruModal = false"></div>
+        <div class="modal-card">
+          <header class="modal-card-head">
+            <p class="modal-card-title"><strong>Fetch Danbooru Tags</strong></p>
+            <button class="delete" aria-label="close" @click="showDanbooruModal = false"></button>
+          </header>
+          <section class="modal-card-body">
+            <div class="field">
+              <label class="label">Lookup Method</label>
+              <div class="control">
+                <label class="radio mr-4">
+                  <input type="radio" v-model="danbooruMode" value="auto" :disabled="danbooruFetching" />
+                  Auto (MD5 + IQDB)
+                </label>
+                <label class="radio">
+                  <input type="radio" v-model="danbooruMode" value="post_id" :disabled="danbooruFetching" />
+                  Danbooru Post ID
+                </label>
+              </div>
+            </div>
+
+            <div class="field" v-if="danbooruMode === 'post_id'">
+              <label class="label">Post ID</label>
+              <div class="control">
+                <input
+                  class="input"
+                  type="text"
+                  v-model="danbooruPostId"
+                  placeholder="e.g. 1234567"
+                  :disabled="danbooruFetching"
+                  @keyup.enter="fetchDanbooruTags"
+                />
+              </div>
+              <p class="help">
+                Enter the numeric post ID from a Danbooru URL
+                (e.g. <code>danbooru.donmai.us/posts/<strong>1234567</strong></code>).
+              </p>
+            </div>
+
+            <div v-if="danbooruMode === 'auto'" class="content">
+              <p class="has-text-grey is-size-7">
+                Will search Danbooru by this media's MD5 hash first.
+                If no match is found, it will try IQDB visual similarity as a fallback.
+              </p>
+            </div>
+
+            <div v-if="danbooruResult" class="notification is-success is-light mt-4">
+              <p>
+                <span class="icon"><i class="fa-solid fa-check"></i></span>
+                Found via <strong>{{ danbooruResult.method }}</strong> —
+                applied <strong>{{ danbooruResult.tags_applied }}</strong> tag(s)
+                <template v-if="danbooruResult.tags_created > 0">
+                  (<strong>{{ danbooruResult.tags_created }}</strong> new)
+                </template>
+              </p>
+            </div>
+
+            <div v-if="danbooruError" class="notification is-danger is-light mt-4">
+              <p>
+                <span class="icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                {{ danbooruError }}
+              </p>
+            </div>
+          </section>
+          <footer class="modal-card-foot">
+            <div class="buttons">
+              <button
+                class="button is-cyan"
+                :class="{ 'is-loading': danbooruFetching }"
+                :disabled="danbooruFetching"
+                @click="fetchDanbooruTags"
+              >
+                <span class="icon"><i class="fa-solid fa-download"></i></span>
+                <span>Fetch Tags</span>
+              </button>
+              <button class="button" @click="showDanbooruModal = false" :disabled="danbooruFetching">Close</button>
+            </div>
+          </footer>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -338,5 +577,35 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 .media-fade.is-loaded {
   opacity: 1;
+}
+
+/* ── Toolbar layout ───────────────────────────────────────── */
+
+.media-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.toolbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* On narrow screens, let the toolbar stack but keep groups intact */
+@media (max-width: 480px) {
+  .media-toolbar {
+    justify-content: center;
+  }
 }
 </style>

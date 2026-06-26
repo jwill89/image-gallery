@@ -1,36 +1,45 @@
 <script setup lang="ts">
-import { TAG_CATEGORIES } from '../constants/categories'
+import { useGalleryStore } from '../stores/gallery'
+import { colorToTagClass } from '../constants/categories'
+
+defineEmits<{
+  close: []
+}>()
+
+const store = useGalleryStore()
 </script>
 
 <template>
-  <div class="modal-card">
-    <header class="modal-card-head">
-      <p class="modal-card-title"><strong>Tag Help</strong></p>
-      <button class="delete is-large" aria-label="close" @click="$emit('close')"></button>
-    </header>
-    <section class="modal-card-body">
-      <div class="content">
-        <h4>Tag Categories</h4>
-        <p>Tags have five categories they belong to, each having a different color. When you add
-          a tag, you can add a shortcode followed by a colon before the tag to ensure it is added
-          to the appropriate category. Tags are converted to lowercase. The shortcodes are:</p>
-        <table class="table is-hoverable is-fullwidth">
-          <thead>
-            <tr>
-              <th>Tag</th>
-              <th>Shortcode</th>
-              <th>Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="cat in TAG_CATEGORIES" :key="cat.id">
-              <td><span class="tag" :class="cat.tagClass">{{ cat.name }}</span></td>
-              <td><code>{{ cat.shortcode }}:</code></td>
-              <td>{{ cat.description }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </div>
+  <article class="message is-info">
+    <div class="message-header">
+      <p>
+        <span class="icon"><i class="fa-solid fa-circle-info"></i></span>
+        <span>Tag Help</span>
+      </p>
+      <button class="delete" aria-label="close" @click="$emit('close')"></button>
+    </div>
+    <div class="message-body">
+      <p class="mb-3">
+        Tags have categories they belong to, each with a different color. When adding
+        a tag, prefix it with a shortcode and colon to assign it to the appropriate
+        category (e.g. <code>a:artist name</code>). Tags are converted to lowercase.
+      </p>
+      <table class="table is-hoverable is-fullwidth is-narrow">
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Shortcode</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="cat in store.categories" :key="cat.category_id">
+            <td><span class="tag" :class="colorToTagClass(cat.color)">{{ cat.category_name }}</span></td>
+            <td><code>{{ cat.category_short }}:</code></td>
+            <td>{{ cat.description }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
 </template>

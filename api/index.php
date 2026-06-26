@@ -13,6 +13,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
+use Routes\Internal\DanbooruController;
 use Routes\Internal\DuplicatesController;
 use Routes\Internal\MediaController;
 use Routes\Internal\TagController;
@@ -90,18 +91,22 @@ $authMiddleware = function (ServerRequestInterface $request, RequestHandlerInter
 
     // Only require auth for state-changing methods
     if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
-        // Allow unauthenticated tag add/remove on media items
-        $path = $request->getUri()->getPath();
-        $publicTagPaths = ['/tags/media/add', '/tags/media/remove'];
-        $isPublicTagOp = false;
-        foreach ($publicTagPaths as $p) {
-            if (str_contains($path, $p)) {
-                $isPublicTagOp = true;
+        // Allowlist of state-changing-method routes that are intentionally public:
+        //  - tag add/remove on media items (anyone may tag)
+        //  - /media/by-ids is a read that uses POST only to carry a large id list
+        // Match the route suffix exactly (ignoring a trailing slash) rather than
+        // a loose substring, so unrelated paths can't slip through.
+        $normalizedPath = rtrim($path, '/');
+        $publicPaths = ['/tags/media/add', '/tags/media/remove', '/media/by-ids'];
+        $isPublicOp = false;
+        foreach ($publicPaths as $p) {
+            if (str_ends_with($normalizedPath, $p)) {
+                $isPublicOp = true;
                 break;
             }
         }
 
-        if (!$isPublicTagOp && !verifyAuthToken($request->getHeaderLine('Authorization'))) {
+        if (!$isPublicOp && !verifyAuthToken($request->getHeaderLine('Authorization'))) {
             return unauthorizedResponse();
         }
     }
@@ -143,31 +148,32 @@ $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $ha
         $referer = $request->getHeaderLine('Referer');
         $allowedOrigins = Configuration::getAllowedOrigins();
 
-        if (!empty($origin) && !in_array($origin, $allowedOrigins, true)) {
-            Logger::getInstance()->warning('CSRF origin rejected', ['origin' => $origin]);
+        if (!empty($origin)) {
+            // Validate the Origin header directly.
+            $rejected = !in_array($origin, $allowedOrigins, true);
+        } elseif (!empty($referer)) {
+            // Fall back to deriving the origin from the Referer header.
+            $refererOrigin = parse_url($referer, PHP_URL_SCHEME) . '://' . parse_url($referer, PHP_URL_HOST);
+            $port = parse_url($referer, PHP_URL_PORT);
+            if ($port) {
+                $refererOrigin .= ':' . $port;
+            }
+            $rejected = !in_array($refererOrigin, $allowedOrigins, true);
+        } else {
+            // Neither Origin nor Referer present: reject state-changing requests.
+            // Browsers always send at least one for cross-/same-origin writes;
+            // their absence indicates a non-browser client bypassing CORS (e.g. curl).
+            $rejected = true;
+        }
+
+        if ($rejected) {
+            Logger::getInstance()->warning('CSRF rejected', ['origin' => $origin, 'referer' => $referer]);
             $response = new \Slim\Psr7\Response();
             $response->getBody()->write(json_encode([
                 'error' => 'ForbiddenOrigin',
                 'message' => 'The request origin is not allowed.',
             ], JSON_THROW_ON_ERROR));
             return $response->withStatus(403)->withHeader('Content-Type', 'application/json');
-        }
-
-        if (empty($origin) && !empty($referer)) {
-            $refererOrigin = parse_url($referer, PHP_URL_SCHEME) . '://' . parse_url($referer, PHP_URL_HOST);
-            $port = parse_url($referer, PHP_URL_PORT);
-            if ($port) {
-                $refererOrigin .= ':' . $port;
-            }
-            if (!in_array($refererOrigin, $allowedOrigins, true)) {
-                Logger::getInstance()->warning('CSRF referer rejected', ['referer' => $referer]);
-                $response = new \Slim\Psr7\Response();
-                $response->getBody()->write(json_encode([
-                    'error' => 'ForbiddenOrigin',
-                    'message' => 'The request origin is not allowed.',
-                ], JSON_THROW_ON_ERROR));
-                return $response->withStatus(403)->withHeader('Content-Type', 'application/json');
-            }
         }
     }
 
@@ -218,7 +224,7 @@ $app->group('/media', function (RouteCollectorProxy $group) {
     $group->get('/total[/]', MediaController::class . ':getTotal');
     $group->delete('/{media_id}[/]', MediaController::class . ':deleteItem');
     $group->get('/[{media_id}[/]]', MediaController::class . ':getItem');
-});
+})->add($authMiddleware);
 
 // ============================================================
 // Tag Controllers
@@ -239,16 +245,53 @@ $app->group('/tags', function (RouteCollectorProxy $group) {
     $group->get('/implications[/]', TagController::class . ':getImplications');
     $group->post('/implications/add[/]', TagController::class . ':addImplication');
     $group->delete('/implications/remove[/]', TagController::class . ':removeImplication');
+    // Danbooru tag fetch for a single media item
+    $group->post('/danbooru-fetch[/]', TagController::class . ':fetchDanbooruTags');
+    // Tag categories
+    $group->get('/categories[/]', TagController::class . ':getCategories');
+    $group->post('/categories/add[/]', TagController::class . ':addCategory');
+    $group->put('/categories/edit/{category_id}[/]', TagController::class . ':editCategory');
+    $group->delete('/categories/delete[/]', TagController::class . ':deleteCategory');
 })->add($authMiddleware);
 
 // ============================================================
 // Authentication Endpoint
 // ============================================================
 $app->post('/auth/login[/]', function (ServerRequestInterface $request, ResponseInterface $response) {
+    $ip = $request->getServerParams()['REMOTE_ADDR'] ?? 'unknown';
+
+    // Stricter throttle for login attempts specifically, in its own bucket
+    // (separate from the global per-IP limiter) to slow password brute-forcing.
+    $loginLimiter = new RateLimiter(10, 300); // 10 attempts per 5 minutes
+    $loginCheck = $loginLimiter->check('login:' . $ip);
+    if (!$loginCheck['allowed']) {
+        Logger::getInstance()->warning('Login rate limit exceeded', ['ip' => $ip]);
+        $response->getBody()->write(json_encode([
+            'error' => 'TooManyAttempts',
+            'message' => 'Too many login attempts. Please wait a few minutes and try again.',
+            'retry_after' => $loginCheck['retry_after'],
+        ]));
+        return $response
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Retry-After', (string) $loginCheck['retry_after'])
+            ->withStatus(429);
+    }
+
+    // Refuse logins entirely if no admin password is configured, so the
+    // 'changeme' development default can never grant access in production.
+    if (!Configuration::isAdminConfigured()) {
+        Logger::getInstance()->error('Login attempted but GALLERY_ADMIN_PASSWORD is not configured', ['ip' => $ip]);
+        $response->getBody()->write(json_encode([
+            'error' => 'AdminNotConfigured',
+            'message' => 'Admin access is not configured on the server.',
+        ]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(503);
+    }
+
     $params = json_decode((string)$request->getBody(), true) ?? [];
     $password = $params['password'] ?? '';
 
-    if ($password === Configuration::getAdminPassword()) {
+    if (is_string($password) && hash_equals(Configuration::getAdminPassword(), $password)) {
         $token = bin2hex(random_bytes(32));
         $db = \Gallery\Core\DatabaseConnection::getInstance();
 
@@ -257,18 +300,32 @@ $app->post('/auth/login[/]', function (ServerRequestInterface $request, Response
         $stmt = $db->prepare('INSERT INTO auth_tokens (token, created_at) VALUES (:token, :time)');
         $stmt->execute([':token' => $token, ':time' => time()]);
 
-        Logger::getInstance()->info('Admin login successful', ['ip' => $request->getServerParams()['REMOTE_ADDR'] ?? 'unknown']);
+        Logger::getInstance()->info('Admin login successful', ['ip' => $ip]);
         $response->getBody()->write(json_encode(['token' => $token]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
 
-    Logger::getInstance()->warning('Admin login failed', ['ip' => $request->getServerParams()['REMOTE_ADDR'] ?? 'unknown']);
+    Logger::getInstance()->warning('Admin login failed', ['ip' => $ip]);
     $response->getBody()->write(json_encode([
         'error' => 'InvalidPassword',
         'message' => 'The password is incorrect.',
     ]));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
 });
+
+// ============================================================
+// Danbooru Import Rules (protected by auth middleware)
+// ============================================================
+$app->group('/danbooru', function (RouteCollectorProxy $group) {
+    $group->get('/rules[/]', DanbooruController::class . ':getRules');
+    // Category mappings
+    $group->post('/category-map/add[/]', DanbooruController::class . ':addCategoryMapping');
+    $group->delete('/category-map/delete[/]', DanbooruController::class . ':deleteCategoryMapping');
+    // Tag name mappings
+    $group->post('/tag-map/add[/]', DanbooruController::class . ':addTagMapping');
+    $group->put('/tag-map/edit/{id}[/]', DanbooruController::class . ':editTagMapping');
+    $group->delete('/tag-map/delete[/]', DanbooruController::class . ':deleteTagMapping');
+})->add($authMiddleware);
 
 // ============================================================
 // Upload Controllers (protected by auth middleware)

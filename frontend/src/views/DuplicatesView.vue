@@ -277,7 +277,7 @@ onMounted(() => {
             <i class="fa-solid fa-triangle-exclamation fa-3x"></i>
           </span>
           <p class="is-size-5 has-text-grey mt-4">Could not load the duplicates report.</p>
-          <button class="button is-link mt-4" @click="loadReport">
+          <button class="button is-indigo mt-4" @click="loadReport">
             <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
             <span>Retry</span>
           </button>
@@ -417,7 +417,7 @@ onMounted(() => {
               <div class="level-right">
                 <div class="level-item">
                   <button
-                    class="button is-warning is-outlined"
+                    class="button is-amber is-outlined"
                     :class="{ 'is-loading': dismissing === `${match.media_1.media_id}:${match.media_2.media_id}` }"
                     :disabled="dismissing !== null"
                     @click="dismissPair(match)"

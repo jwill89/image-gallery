@@ -13,6 +13,9 @@ class TagCategory extends AbstractStructure
     private int $category_id = 0;
     private string $category_name = '';
     private string $category_short = '';
+    private string $color = 'white';
+    private string $description = '';
+    private int $sort_order = 0;
 
     /**
      * Get the category ID.
@@ -79,6 +82,63 @@ class TagCategory extends AbstractStructure
     public function setCategoryShort(string $category_short): self
     {
         $this->category_short = $category_short;
+        return $this;
+    }
+
+    /**
+     * Get the category color (Bulma color name).
+     */
+    public function getColor(): string
+    {
+        return $this->color;
+    }
+
+    /**
+     * Set the category color (Bulma color name).
+     *
+     * @return $this
+     */
+    public function setColor(string $color): self
+    {
+        $this->color = $color;
+        return $this;
+    }
+
+    /**
+     * Get the category description.
+     */
+    public function getDescription(): string
+    {
+        return $this->description;
+    }
+
+    /**
+     * Set the category description.
+     *
+     * @return $this
+     */
+    public function setDescription(string $description): self
+    {
+        $this->description = $description;
+        return $this;
+    }
+
+    /**
+     * Get the sort order.
+     */
+    public function getSortOrder(): int
+    {
+        return $this->sort_order;
+    }
+
+    /**
+     * Set the sort order.
+     *
+     * @return $this
+     */
+    public function setSortOrder(int $sort_order): self
+    {
+        $this->sort_order = $sort_order;
         return $this;
     }
 }

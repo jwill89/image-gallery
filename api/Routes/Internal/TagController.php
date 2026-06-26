@@ -6,9 +6,12 @@ use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Core\ResponseCache;
+use Gallery\Core\DanbooruTagger;
 use Gallery\Collection\TagCollection;
+use Gallery\Collection\TagCategoryCollection;
 use Gallery\Collection\MediaCollection;
 use Gallery\Structure\Tag;
+use Gallery\Structure\TagCategory;
 
 /**
  * TagController class
@@ -17,15 +20,24 @@ use Gallery\Structure\Tag;
 class TagController extends AbstractController
 {
     private const int MAX_TAG_NAME_LENGTH = 100;
-    private const array VALID_CATEGORY_IDS = [1, 2, 3, 4, 5];
+    private const int MAX_CATEGORY_NAME_LENGTH = 50;
+    private const int MAX_SHORTCODE_LENGTH = 5;
+    private const array VALID_COLORS = [
+        // Bulma built-in
+        'white', 'light', 'dark', 'primary', 'link', 'info', 'success', 'warning', 'danger',
+        // Extended palette (defined in frontend style.css)
+        'teal', 'purple', 'pink', 'orange', 'cyan', 'lime', 'indigo', 'rose', 'amber', 'emerald',
+    ];
 
     private TagCollection $tag_collection;
+    private TagCategoryCollection $category_collection;
     private MediaCollection $media_collection;
 
     public function __construct(ContainerInterface $container)
     {
         parent::__construct($container);
         $this->tag_collection = new TagCollection();
+        $this->category_collection = new TagCategoryCollection();
         $this->media_collection = new MediaCollection();
     }
 
@@ -71,7 +83,7 @@ class TagController extends AbstractController
         if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
             return $this->error($response, 'TagNameTooLong', 400, 'Tag name must be ' . self::MAX_TAG_NAME_LENGTH . ' characters or fewer.');
         }
-        if (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
+        if (!in_array($tag_category, $this->category_collection->getAllIds(), true)) {
             return $this->error($response, 'InvalidCategoryID', 400, 'The selected tag category is not valid.');
         }
         if ($this->tag_collection->getByName($tag_name) instanceof Tag) {
@@ -108,7 +120,7 @@ class TagController extends AbstractController
         if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
             return $this->error($response, 'TagNameTooLong', 400, 'Tag name must be ' . self::MAX_TAG_NAME_LENGTH . ' characters or fewer.');
         }
-        if (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
+        if (!in_array($tag_category, $this->category_collection->getAllIds(), true)) {
             return $this->error($response, 'InvalidCategoryID', 400, 'The selected tag category is not valid.');
         }
 
@@ -177,11 +189,11 @@ class TagController extends AbstractController
             return $this->error($response, 'InvalidTagList', 400, 'At least one valid tag must be provided.');
         }
 
-        foreach ($tag_ids as $tid) {
-            $tag = $this->tag_collection->get($tid);
-            if (!($tag instanceof Tag)) {
-                return $this->error($response, 'TagDoesNotExist', 404, "Tag #{$tid} does not exist.");
-            }
+        // Validate that every supplied tag exists in a single query (no N+1).
+        $existing_ids = $this->tag_collection->getExistingIds($tag_ids);
+        $missing = array_values(array_diff($tag_ids, $existing_ids));
+        if (!empty($missing)) {
+            return $this->error($response, 'TagDoesNotExist', 404, "Tag #{$missing[0]} does not exist.");
         }
 
         $success = $this->tag_collection->addTagsToMedia($media, $tag_ids);
@@ -317,6 +329,149 @@ class TagController extends AbstractController
     }
 
     // ========================================================================
+    // Tag Category CRUD Endpoints
+    // ========================================================================
+
+    public function getCategories(Request $request, Response $response, array $args): Response
+    {
+        return $this->success($response, $this->category_collection->getAll());
+    }
+
+    public function addCategory(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getParsedBody() ?? [];
+        $name = trim($params['category_name'] ?? '');
+        $short = trim(strtolower($params['category_short'] ?? ''));
+        $color = trim($params['color'] ?? 'white');
+        $description = trim($params['description'] ?? '');
+        $sortOrder = (int) ($params['sort_order'] ?? 0);
+
+        if (empty($name)) {
+            return $this->error($response, 'InvalidInput', 400, 'Category name is required.');
+        }
+        if (mb_strlen($name) > self::MAX_CATEGORY_NAME_LENGTH) {
+            return $this->error($response, 'NameTooLong', 400, 'Category name must be ' . self::MAX_CATEGORY_NAME_LENGTH . ' characters or fewer.');
+        }
+        if (empty($short)) {
+            return $this->error($response, 'InvalidInput', 400, 'A shortcode is required.');
+        }
+        if (mb_strlen($short) > self::MAX_SHORTCODE_LENGTH) {
+            return $this->error($response, 'ShortcodeTooLong', 400, 'Shortcode must be ' . self::MAX_SHORTCODE_LENGTH . ' characters or fewer.');
+        }
+        if (!in_array($color, self::VALID_COLORS, true)) {
+            return $this->error($response, 'InvalidColor', 400, 'The selected color is not valid.');
+        }
+
+        $conflicts = $this->category_collection->checkConflicts($name, $short);
+        if (in_array('name', $conflicts, true)) {
+            return $this->error($response, 'NameTaken', 400, "A category named \"{$name}\" already exists.");
+        }
+        if (in_array('short', $conflicts, true)) {
+            return $this->error($response, 'ShortcodeTaken', 400, "The shortcode \"{$short}\" is already in use.");
+        }
+
+        $category = new TagCategory();
+        $category->setCategoryName($name)
+                 ->setCategoryShort($short)
+                 ->setColor($color)
+                 ->setDescription($description)
+                 ->setSortOrder($sortOrder);
+
+        $id = $this->category_collection->save($category);
+        if ($id === 0) {
+            return $this->error($response, 'SaveFailed', 500, 'Could not create the category.');
+        }
+
+        $this->invalidateCache('tags');
+        $this->logger->info('Category created', ['category_id' => $id, 'name' => $name]);
+        return $this->success($response, $this->category_collection->getAll());
+    }
+
+    public function editCategory(Request $request, Response $response, array $args): Response
+    {
+        $categoryId = (int) ($args['category_id'] ?? 0);
+        $params = $request->getParsedBody() ?? [];
+        $name = trim($params['category_name'] ?? '');
+        $short = trim(strtolower($params['category_short'] ?? ''));
+        $color = trim($params['color'] ?? 'white');
+        $description = trim($params['description'] ?? '');
+        $sortOrder = (int) ($params['sort_order'] ?? 0);
+
+        if ($categoryId <= 0) {
+            return $this->error($response, 'InvalidInput', 400, 'A valid category ID is required.');
+        }
+
+        $category = $this->category_collection->get($categoryId);
+        if ($category === null) {
+            return $this->error($response, 'CategoryNotFound', 404, 'The category does not exist.');
+        }
+        if (empty($name)) {
+            return $this->error($response, 'InvalidInput', 400, 'Category name is required.');
+        }
+        if (mb_strlen($name) > self::MAX_CATEGORY_NAME_LENGTH) {
+            return $this->error($response, 'NameTooLong', 400, 'Category name must be ' . self::MAX_CATEGORY_NAME_LENGTH . ' characters or fewer.');
+        }
+        if (empty($short)) {
+            return $this->error($response, 'InvalidInput', 400, 'A shortcode is required.');
+        }
+        if (mb_strlen($short) > self::MAX_SHORTCODE_LENGTH) {
+            return $this->error($response, 'ShortcodeTooLong', 400, 'Shortcode must be ' . self::MAX_SHORTCODE_LENGTH . ' characters or fewer.');
+        }
+        if (!in_array($color, self::VALID_COLORS, true)) {
+            return $this->error($response, 'InvalidColor', 400, 'The selected color is not valid.');
+        }
+
+        $conflicts = $this->category_collection->checkConflicts($name, $short, $categoryId);
+        if (in_array('name', $conflicts, true)) {
+            return $this->error($response, 'NameTaken', 400, "A category named \"{$name}\" already exists.");
+        }
+        if (in_array('short', $conflicts, true)) {
+            return $this->error($response, 'ShortcodeTaken', 400, "The shortcode \"{$short}\" is already in use.");
+        }
+
+        $category->setCategoryName($name)
+                 ->setCategoryShort($short)
+                 ->setColor($color)
+                 ->setDescription($description)
+                 ->setSortOrder($sortOrder);
+
+        $this->category_collection->save($category);
+        $this->invalidateCache('tags');
+        $this->logger->info('Category edited', ['category_id' => $categoryId, 'name' => $name]);
+        return $this->success($response, $this->category_collection->getAll());
+    }
+
+    public function deleteCategory(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getParsedBody() ?? [];
+        $categoryId = (int) ($params['category_id'] ?? 0);
+
+        if ($categoryId <= 0) {
+            return $this->error($response, 'InvalidInput', 400, 'A valid category ID is required.');
+        }
+
+        $category = $this->category_collection->get($categoryId);
+        if ($category === null) {
+            return $this->error($response, 'CategoryNotFound', 404, 'The category does not exist.');
+        }
+
+        $tagCount = $this->category_collection->countTags($categoryId);
+        if ($tagCount > 0) {
+            return $this->error($response, 'CategoryInUse', 400,
+                "Cannot delete \"{$category->getCategoryName()}\" because {$tagCount} tag(s) belong to it. Reassign them first.");
+        }
+
+        $deleted = $this->category_collection->delete($category);
+        if (!$deleted) {
+            return $this->error($response, 'DeleteFailed', 500, 'Could not delete the category.');
+        }
+
+        $this->invalidateCache('tags');
+        $this->logger->info('Category deleted', ['category_id' => $categoryId]);
+        return $this->success($response, $this->category_collection->getAll());
+    }
+
+    // ========================================================================
     // Tag Implication Endpoints
     // ========================================================================
 
@@ -379,6 +534,78 @@ class TagController extends AbstractController
         $this->invalidateCache('tags');
         $this->logger->info('Tag implication removed', ['tag_id' => $tag_id, 'implied_tag_id' => $implied_tag_id]);
         return $this->success($response, $this->tag_collection->getAllImplications());
+    }
+
+    // ========================================================================
+    // Danbooru Tag Import
+    // ========================================================================
+
+    /**
+     * Fetch tags from Danbooru for a media item.
+     *
+     * Accepts either:
+     *   - media_id only: auto-lookup by MD5 hash, then IQDB visual similarity
+     *   - media_id + danbooru_post_id: import tags directly from that Danbooru post
+     *
+     * Returns the updated tag list for the media item.
+     */
+    public function fetchDanbooruTags(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getParsedBody() ?? [];
+        $mediaId = (int) ($params['media_id'] ?? 0);
+        $danbooruPostId = (int) ($params['danbooru_post_id'] ?? 0);
+
+        if ($mediaId <= 0) {
+            return $this->error($response, 'InvalidMediaID', 400, 'A valid media ID is required.');
+        }
+
+        if (!DanbooruTagger::isConfigured()) {
+            return $this->error($response, 'DanbooruNotConfigured', 500,
+                'Danbooru credentials are not configured on the server.');
+        }
+
+        $media = $this->media_collection->get($mediaId);
+        if ($media === null) {
+            return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
+        }
+
+        $tagger = new DanbooruTagger();
+
+        if ($danbooruPostId > 0) {
+            // Direct post ID import
+            $result = $tagger->importTagsFromPost($mediaId, $danbooruPostId);
+        } else {
+            // Auto-lookup: MD5 first, then IQDB fallback
+            $result = $tagger->importTagsForMedia($mediaId, $media->getHash(), $media->getFileName());
+        }
+
+        if (!$result['found']) {
+            return $this->error($response, 'NotFoundOnDanbooru', 404,
+                $danbooruPostId > 0
+                    ? "Danbooru post #{$danbooruPostId} could not be found."
+                    : 'This media could not be found on Danbooru by hash or visual similarity.');
+        }
+
+        $this->invalidateCache('media', 'tags');
+        $this->logger->info('Danbooru tags imported', [
+            'media_id' => $mediaId,
+            'method' => $result['method'],
+            'tags_applied' => $result['tags_applied'],
+            'tags_created' => $result['tags_created'],
+        ]);
+
+        // Refresh the global tag list (new tags may have been created)
+        $store_tags = $this->tag_collection->getAll();
+
+        $data = [
+            'tags' => $this->tag_collection->getTagsForMedia($media),
+            'all_tags' => $store_tags,
+            'method' => $result['method'],
+            'tags_applied' => $result['tags_applied'],
+            'tags_created' => $result['tags_created'],
+        ];
+
+        return $this->success($response, $data);
     }
 
     // ========================================================================

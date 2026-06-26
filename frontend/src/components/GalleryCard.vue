@@ -66,6 +66,11 @@ function toggleFavorite(e: Event) {
   position: relative;
   border-radius: 6px;
   cursor: pointer;
+  /* Skip rendering/layout for off-screen cards. Keeps paint & layout cost
+     roughly constant as the infinite-scroll list grows. The intrinsic size
+     hint matches the 200px card height so the scrollbar stays stable. */
+  content-visibility: auto;
+  contain-intrinsic-size: 200px 200px;
 }
 
 .gallery-card-inner {

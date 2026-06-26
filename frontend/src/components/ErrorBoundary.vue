@@ -32,7 +32,7 @@ function retry() {
           <i class="fa-solid fa-triangle-exclamation fa-3x"></i>
         </span>
         <p class="is-size-5 has-text-grey mt-4">{{ fallbackMessage }}</p>
-        <button class="button is-link mt-4" @click="retry">
+        <button class="button is-indigo mt-4" @click="retry">
           <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
           <span>Try Again</span>
         </button>

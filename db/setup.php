@@ -7,155 +7,152 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
-// Required Autoloader
-require_once('../vendor/autoload.php');
+/**
+ * Database setup / bootstrap.
+ *
+ * Phinx migrations (db/migrations/) are the SINGLE SOURCE OF TRUTH for the
+ * schema, indexes, and seed data. This script only ensures the SQLite database
+ * file exists, then applies all pending migrations.
+ *
+ * Equivalent manual commands:
+ *     php vendor/bin/phinx migrate              # apply migrations
+ *     php vendor/bin/phinx create MyMigration   # scaffold a new migration
+ *
+ * Do NOT add hand-written CREATE TABLE statements here — add a migration instead.
+ */
 
-use Gallery\Core\DatabaseConnection;
+// Resolve to project root so phinx.php's relative paths (db/gallery.db,
+// db/migrations) line up regardless of where this is invoked from.
+chdir(__DIR__ . '/..');
 
-// Create Database Connection
-$db = DatabaseConnection::getInstance();
+require __DIR__ . '/../vendor/autoload.php';
 
-echo "Gallery - Database Creation Setup\n";
-echo "==================================\n\n";
+use Phinx\Console\PhinxApplication;
+use Symfony\Component\Console\Input\StringInput;
+use Symfony\Component\Console\Output\ConsoleOutput;
 
-// Check if DB Exists and is Writable
-$db_exists = file_exists('gallery.db');
-$db_writeable = is_writable('gallery.db');
+echo "Gallery - Database Setup (Phinx migrations)\n";
+echo "===========================================\n\n";
 
-if (!$db_exists) {
-    echo "[ERROR] Database file does not exist. Please create the gallery.db database file.\n";
-    exit(1);
+// Ensure the SQLite database file exists. PDO/Phinx would create it on connect,
+// but creating it up front surfaces permission problems with a clearer message.
+$dbPath = __DIR__ . '/gallery.db';
+
+if (!file_exists($dbPath)) {
+    if (@touch($dbPath) === false) {
+        echo "[ERROR] Could not create database file at db/gallery.db. Check directory permissions.\n";
+        exit(1);
+    }
+    echo "[OK] Created database file: db/gallery.db\n";
+} else {
+    echo "[OK] Database file exists: db/gallery.db\n";
 }
 
-if (!$db_writeable) {
+if (!is_writable($dbPath)) {
     echo "[ERROR] Database file is not writable. Please check the permissions.\n";
     exit(1);
 }
 
-echo "[OK] Database file exists and is writable.\n\n";
+// Adopt a legacy database created by the pre-Phinx hand-written setup, so
+// `phinx migrate` doesn't try to re-create tables that already exist.
+baselineLegacyDatabase($dbPath);
 
-// Table definitions
-$tables = [
-    'media' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "media" (
-        "media_id"	INTEGER NOT NULL UNIQUE,
-        "media_type"	TEXT NOT NULL DEFAULT 'image',
-        "file_name"	TEXT NOT NULL UNIQUE,
-        "file_time"	INTEGER NOT NULL,
-        "hash"	TEXT NOT NULL,
-        "bits_fingerprint"	TEXT NOT NULL DEFAULT '',
-        PRIMARY KEY("media_id" AUTOINCREMENT)
-    )
-    SQL,
+echo "\nApplying migrations...\n\n";
 
-    'tag_categories' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "tag_categories" (
-        "category_id"	INTEGER NOT NULL,
-        "category_name"	TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        "category_short"	TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        PRIMARY KEY("category_id" AUTOINCREMENT)
-    )
-    SQL,
+$phinx = new PhinxApplication();
+$phinx->setAutoExit(false);
 
-    'tags' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "tags" (
-        "tag_id"	INTEGER NOT NULL UNIQUE,
-        "category_id"	INTEGER NOT NULL DEFAULT 1,
-        "tag_name"	TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        PRIMARY KEY("tag_id" AUTOINCREMENT),
-        CONSTRAINT "fk__tags__tag_categories" FOREIGN KEY("category_id") REFERENCES "tag_categories"("category_id")
-    )
-    SQL,
+$exitCode = $phinx->run(
+    new StringInput('migrate -c phinx.php'),
+    new ConsoleOutput()
+);
 
-    'media_tags' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "media_tags" (
-        "media_id"	INTEGER NOT NULL,
-        "tag_id"	INTEGER NOT NULL,
-        CONSTRAINT "PRIMARY" PRIMARY KEY("media_id","tag_id"),
-        CONSTRAINT "FK__media_tags__media" FOREIGN KEY("media_id") REFERENCES "media"("media_id") ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT "FK__media_tags__tags" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE ON UPDATE CASCADE
-    )
-    SQL,
+echo "\n";
+echo $exitCode === 0
+    ? "Setup complete.\n"
+    : "[ERROR] Migrations failed (exit code {$exitCode}).\n";
 
-    'rate_limits' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "rate_limits" (
-        "ip" TEXT NOT NULL,
-        "requested_at" INTEGER NOT NULL
-    )
-    SQL,
+exit($exitCode);
 
-    'auth_tokens' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "auth_tokens" (
-        "token" TEXT NOT NULL PRIMARY KEY,
-        "created_at" INTEGER NOT NULL
-    )
-    SQL,
+/**
+ * One-time legacy adoption.
+ *
+ * The production database was originally created by the old hand-written
+ * setup.php (no Phinx tracking). If we detect that state — an existing schema
+ * with no `phinx_migrations` table — we record the migrations whose changes are
+ * already present, so Phinx applies only genuinely new migrations instead of
+ * failing on `CREATE TABLE` for tables that already exist.
+ *
+ * This is idempotent: once `phinx_migrations` exists (normal Phinx-managed DBs,
+ * including fresh local ones), it returns immediately. Brand-new empty databases
+ * are also left untouched so Phinx can build them from scratch.
+ */
+function baselineLegacyDatabase(string $dbPath): void
+{
+    $pdo = new PDO('sqlite:' . $dbPath);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    'tag_implications' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "tag_implications" (
-        "tag_id" INTEGER NOT NULL,
-        "implied_tag_id" INTEGER NOT NULL,
-        PRIMARY KEY("tag_id", "implied_tag_id"),
-        CONSTRAINT "FK__tag_implications__tags_trigger" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE,
-        CONSTRAINT "FK__tag_implications__tags_implied" FOREIGN KEY("implied_tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE
-    )
-    SQL,
+    $tableExists = static function (PDO $pdo, string $name): bool {
+        $stmt = $pdo->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :n");
+        $stmt->execute([':n' => $name]);
+        return (bool) $stmt->fetchColumn();
+    };
 
-    'dismissed_duplicates' => <<<SQL
-    CREATE TABLE IF NOT EXISTS "dismissed_duplicates" (
-        "media_id_1" INTEGER NOT NULL,
-        "media_id_2" INTEGER NOT NULL,
-        "dismissed_at" INTEGER NOT NULL,
-        PRIMARY KEY("media_id_1", "media_id_2"),
-        CONSTRAINT "FK__dismissed_dupes__media_1" FOREIGN KEY("media_id_1") REFERENCES "media"("media_id") ON DELETE CASCADE,
-        CONSTRAINT "FK__dismissed_dupes__media_2" FOREIGN KEY("media_id_2") REFERENCES "media"("media_id") ON DELETE CASCADE
-    )
-    SQL,
-];
+    // Already Phinx-managed → nothing to do.
+    if ($tableExists($pdo, 'phinx_migrations')) {
+        return;
+    }
 
-// Create tables
-foreach ($tables as $name => $sql) {
-    echo "Creating table '$name'... ";
-    $success = $db->exec($sql);
-    if ($success !== false) {
-        echo "[OK]\n";
-    } else {
-        echo "[ERROR] " . $db->errorInfo()[2] . "\n";
+    // Brand-new/empty DB (no core table) → let Phinx create everything.
+    if (!$tableExists($pdo, 'media')) {
+        return;
+    }
+
+    echo "[baseline] Legacy database detected (no phinx_migrations table).\n";
+    echo "[baseline] Recording already-applied migrations...\n";
+
+    $columnExists = static function (PDO $pdo, string $table, string $column): bool {
+        foreach ($pdo->query('PRAGMA table_info(' . $table . ')') as $row) {
+            if ($row['name'] === $column) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // version => [migration class name, "already present?" probe]
+    // Only migrations that existed at adoption time need probes; anything newer
+    // stays pending and is applied normally by the migrate step below.
+    $migrations = [
+        '20260517000000' => ['InitialSchema', static fn() => $tableExists($pdo, 'media')],
+        '20260522000000' => ['AddTagImplicationsAndIndexes', static fn() => $tableExists($pdo, 'tag_implications')],
+        '20260523000000' => ['AddCategoryColorsAndDanbooruRules', static fn() => $columnExists($pdo, 'tag_categories', 'color')],
+        '20260620000000' => ['AddMediaMetadata', static fn() => $columnExists($pdo, 'media', 'width')],
+    ];
+
+    // Create Phinx's tracking table (matches Phinx's SQLite schema so it can
+    // insert subsequent migration rows itself).
+    $pdo->exec(
+        'CREATE TABLE phinx_migrations (
+            version BIGINT NOT NULL,
+            migration_name VARCHAR(100) NULL,
+            start_time TIMESTAMP NULL,
+            end_time TIMESTAMP NULL,
+            breakpoint BOOLEAN NOT NULL DEFAULT 0,
+            PRIMARY KEY (version)
+        )'
+    );
+
+    $now = date('Y-m-d H:i:s');
+    $insert = $pdo->prepare(
+        'INSERT INTO phinx_migrations (version, migration_name, start_time, end_time, breakpoint)
+         VALUES (:v, :n, :s, :e, 0)'
+    );
+
+    foreach ($migrations as $version => [$name, $isPresent]) {
+        if ($isPresent()) {
+            $insert->execute([':v' => $version, ':n' => $name, ':s' => $now, ':e' => $now]);
+            echo "  marked applied: {$version} {$name}\n";
+        }
     }
 }
-
-// Insert default tag categories
-echo "\nInserting default tag categories... ";
-$sql = <<<SQL
-INSERT OR IGNORE INTO "tag_categories" ("category_id", "category_name", "category_short")
-    VALUES (1, 'General', 'g'),
-           (2, 'Artist', 'a'),
-           (3, 'Character', 'c'),
-           (4, 'Source', 's'),
-           (5, 'Personal List', 'p')
-SQL;
-$success = $db->exec($sql);
-echo ($success !== false) ? "[OK]\n" : "[ERROR] " . $db->errorInfo()[2] . "\n";
-
-// Create indexes
-echo "\nCreating indexes...\n";
-$indexes = [
-    'idx_media_hash' => 'CREATE INDEX IF NOT EXISTS idx_media_hash ON media(hash)',
-    'idx_media_file_time' => 'CREATE INDEX IF NOT EXISTS idx_media_file_time ON media(file_time DESC, media_id DESC)',
-    'idx_media_type' => 'CREATE INDEX IF NOT EXISTS idx_media_type ON media(media_type)',
-    'idx_rate_limits_ip_time' => 'CREATE INDEX IF NOT EXISTS idx_rate_limits_ip_time ON rate_limits(ip, requested_at)',
-    // Reverse index on junction table for tag-based queries (search, exclude, counts, migration)
-    'idx_media_tags_tag_media' => 'CREATE INDEX IF NOT EXISTS idx_media_tags_tag_media ON media_tags(tag_id, media_id)',
-    // Tags category lookup for display page joins/sorts
-    'idx_tags_category' => 'CREATE INDEX IF NOT EXISTS idx_tags_category ON tags(category_id)',
-    // Auth token expiry cleanup
-    'idx_auth_tokens_created' => 'CREATE INDEX IF NOT EXISTS idx_auth_tokens_created ON auth_tokens(created_at)',
-];
-
-foreach ($indexes as $name => $sql) {
-    echo "  Index '$name'... ";
-    $success = $db->exec($sql);
-    echo ($success !== false) ? "[OK]\n" : "[ERROR] " . $db->errorInfo()[2] . "\n";
-}
-
-echo "\nSetup complete.\n";

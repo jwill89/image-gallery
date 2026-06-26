@@ -280,7 +280,18 @@ class MediaStorage
      */
     public function retrieveRandom(): ?Media
     {
-        $sql = "SELECT * FROM " . self::MAIN_TABLE . " ORDER BY RANDOM() LIMIT 1";
+        // Pick the random threshold ONCE via a scalar subquery (single
+        // evaluation), then index-seek to the first row at/after it. This is a
+        // genuine index seek — unlike `media_id >= ABS(RANDOM()) % MAX`, where
+        // RANDOM() is volatile and re-evaluated per row, producing both a full
+        // scan and a heavily skewed distribution. RANDOM() is masked to a
+        // non-negative 63-bit value to avoid ABS(min int) overflow. Rows after
+        // a delete-gap are marginally more likely, which is acceptable for a
+        // gallery "random" feature. Returns null on an empty table.
+        $sql = "SELECT * FROM " . self::MAIN_TABLE . "
+                WHERE media_id >= (SELECT (RANDOM() & 9223372036854775807) % MAX(media_id) FROM " . self::MAIN_TABLE . ")
+                ORDER BY media_id
+                LIMIT 1";
         $stmt = $this->db->query($sql);
         $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
         $item = $stmt->fetch();
@@ -368,19 +379,43 @@ class MediaStorage
     public function store(Media $media): int
     {
         if (empty($media->getMediaId())) {
-            $sql = "INSERT INTO " . self::MAIN_TABLE . " (media_type, file_name, file_time, hash, bits_fingerprint) VALUES (:media_type, :file_name, :file_time, :hash, :bits_fingerprint)";
+            $sql = "INSERT INTO " . self::MAIN_TABLE . " (media_type, file_name, file_time, hash, bits_fingerprint, width, height, duration, file_size)
+                    VALUES (:media_type, :file_name, :file_time, :hash, :bits_fingerprint, :width, :height, :duration, :file_size)";
             $stmt = $this->db->prepare($sql);
             $stmt->bindValue(':media_type', $media->getMediaType(), PDO::PARAM_STR);
             $stmt->bindValue(':file_name', $media->getFileName(), PDO::PARAM_STR);
             $stmt->bindValue(':file_time', $media->getFileTime(), PDO::PARAM_INT);
             $stmt->bindValue(':hash', $media->getHash(), PDO::PARAM_STR);
             $stmt->bindValue(':bits_fingerprint', $media->getBitsFingerprint(), PDO::PARAM_STR);
+            $stmt->bindValue(':width', $media->getWidth(), PDO::PARAM_INT);
+            $stmt->bindValue(':height', $media->getHeight(), PDO::PARAM_INT);
+            $stmt->bindValue(':duration', $media->getDuration());
+            $stmt->bindValue(':file_size', $media->getFileSize(), PDO::PARAM_INT);
 
             $stmt->execute();
             $media->setMediaId((int)$this->db->lastInsertId());
         }
 
         return $media->getMediaId();
+    }
+
+    /**
+     * Updates only the metadata columns for an existing media item.
+     * Used by the backfill script to populate metadata on existing rows.
+     */
+    public function updateMetadata(Media $media): bool
+    {
+        $sql = "UPDATE " . self::MAIN_TABLE . "
+                SET width = :width, height = :height, duration = :duration, file_size = :file_size
+                WHERE media_id = :media_id";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':width', $media->getWidth(), PDO::PARAM_INT);
+        $stmt->bindValue(':height', $media->getHeight(), PDO::PARAM_INT);
+        $stmt->bindValue(':duration', $media->getDuration());
+        $stmt->bindValue(':file_size', $media->getFileSize(), PDO::PARAM_INT);
+        $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
+
+        return $stmt->execute();
     }
 
     /**

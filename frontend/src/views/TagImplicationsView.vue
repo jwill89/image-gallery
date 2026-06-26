@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useApi, hasAuthToken } from '../composables/useApi'
 import { type Tag } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
@@ -27,7 +26,6 @@ const props = defineProps<{
   tagId: number
 }>()
 
-const router = useRouter()
 const api = useApi()
 const toastStore = useToastStore()
 
@@ -175,7 +173,7 @@ onMounted(loadData)
         <p class="is-size-5 has-text-grey mt-4">
           {{ loadFailed ? 'Could not load tag data. Please try again.' : 'Tag not found.' }}
         </p>
-        <button v-if="loadFailed" class="button is-link mt-4" @click="loadData">
+        <button v-if="loadFailed" class="button is-indigo mt-4" @click="loadData">
           <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
           <span>Retry</span>
         </button>
@@ -185,12 +183,6 @@ onMounted(loadData)
         <!-- Header -->
         <div class="level mb-4">
           <div class="level-left">
-            <div class="level-item">
-              <button class="button mr-3" @click="router.push({ name: 'tags' })">
-                <span class="icon"><i class="fa-solid fa-arrow-left"></i></span>
-                <span>Tags</span>
-              </button>
-            </div>
             <div class="level-item">
               <h1 class="title is-4 mb-0">
                 <span :class="getTextClassByName(tagInfo.category_name)">{{ tagInfo.tag_name }}</span>

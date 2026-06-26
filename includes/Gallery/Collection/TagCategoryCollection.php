@@ -93,7 +93,34 @@ class TagCategoryCollection
      */
     public function delete(TagCategory $category): bool
     {
-        // Delete the tag from the database
         return $this->storage->delete($category);
+    }
+
+    /**
+     * Counts tags belonging to a category.
+     */
+    public function countTags(int $categoryId): int
+    {
+        return $this->storage->countTagsInCategory($categoryId);
+    }
+
+    /**
+     * Returns all valid category IDs.
+     *
+     * @return int[]
+     */
+    public function getAllIds(): array
+    {
+        return $this->storage->retrieveAllIds();
+    }
+
+    /**
+     * Checks for name/shortcode conflicts.
+     *
+     * @return string[] List of conflicting fields ('name', 'short').
+     */
+    public function checkConflicts(string $name, string $short, int $excludeId = 0): array
+    {
+        return $this->storage->nameOrShortExists($name, $short, $excludeId);
     }
 }

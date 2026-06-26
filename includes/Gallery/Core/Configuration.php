@@ -106,6 +106,17 @@ class Configuration
     }
 
     /**
+     * Whether an admin password has been explicitly configured via
+     * GALLERY_ADMIN_PASSWORD. When false, login must be refused so the
+     * insecure 'changeme' development default can never grant access.
+     */
+    public static function isAdminConfigured(): bool
+    {
+        $password = self::getEnvVar('GALLERY_ADMIN_PASSWORD');
+        return $password !== null && $password !== '';
+    }
+
+    /**
      * Resolve an environment variable.
      * Loads .env on first call, then checks all standard sources.
      * Apache SetEnv with mod_rewrite prefixes vars with REDIRECT_.
@@ -167,6 +178,16 @@ class Configuration
     public static function getFontAwesomeKitId(): string
     {
         return self::getEnvVar('FONTAWESOME_KIT_ID') ?? '';
+    }
+
+    /**
+     * Get the public base URL for the gallery (e.g. "https://gallery.example.com").
+     * Used for constructing public image URLs for external services like IQDB.
+     * Returns empty string if not configured.
+     */
+    public static function getGalleryUrl(): string
+    {
+        return rtrim(self::getEnvVar('GALLERY_URL') ?? '', '/');
     }
 
     /**

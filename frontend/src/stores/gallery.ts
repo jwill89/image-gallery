@@ -10,6 +10,15 @@ export interface Tag {
   media_count?: number
 }
 
+export interface TagCategory {
+  category_id: number
+  category_name: string
+  category_short: string
+  color: string
+  description: string
+  sort_order: number
+}
+
 export interface MediaItem {
   media_id: number
   media_type: 'image' | 'video'
@@ -17,6 +26,10 @@ export interface MediaItem {
   file_time: number
   hash: string
   bits_fingerprint?: string
+  width?: number
+  height?: number
+  duration?: number
+  file_size?: number
 }
 
 export const useGalleryStore = defineStore('gallery', () => {
@@ -25,6 +38,7 @@ export const useGalleryStore = defineStore('gallery', () => {
   // State
   const pageTitle = ref('Gallery')
   const allTags = ref<Tag[]>([])
+  const categories = ref<TagCategory[]>([])
   const totalMedia = ref(0)
   const blurThumbnails = ref(localStorage.getItem('blurThumbnails') === 'true')
   const loading = ref(false)
@@ -46,12 +60,14 @@ export const useGalleryStore = defineStore('gallery', () => {
     initialized.value = true
 
     try {
-      const [tags, total] = await Promise.all([
+      const [tags, total, cats] = await Promise.all([
         api.get<Tag[]>('/tags/all/'),
-        api.get<number>('/media/total/')
+        api.get<number>('/media/total/'),
+        api.get<TagCategory[]>('/tags/categories/')
       ])
       allTags.value = tags ?? []
       totalMedia.value = total ?? 0
+      categories.value = cats ?? []
     } catch (e) {
       console.error('Initialization error:', e)
       error.value = 'Failed to initialize gallery'
@@ -61,8 +77,12 @@ export const useGalleryStore = defineStore('gallery', () => {
 
   async function refreshTags() {
     try {
-      const tags = await api.get<Tag[]>('/tags/all/')
+      const [tags, cats] = await Promise.all([
+        api.get<Tag[]>('/tags/all/'),
+        api.get<TagCategory[]>('/tags/categories/')
+      ])
       allTags.value = tags ?? []
+      categories.value = cats ?? []
     } catch (e) {
       console.error('Error refreshing tags:', e)
     }
@@ -84,6 +104,7 @@ export const useGalleryStore = defineStore('gallery', () => {
   return {
     pageTitle,
     allTags,
+    categories,
     totalMedia,
     blurThumbnails,
     loading,

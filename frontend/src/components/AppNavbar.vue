@@ -21,9 +21,12 @@ const authenticated = ref(hasAuthToken())
 
 const isMediaActive = computed(() => {
   const name = route.name as string
-  return name === 'media' || name === 'media-with-tags'
+  return name === 'media' || name === 'media-with-tags' || name === 'media-tags'
 })
-const isTagsActive = computed(() => route.name === 'tags')
+const isTagsActive = computed(() => {
+  const name = route.name as string
+  return name === 'tags' || name === 'tag-categories' || name === 'danbooru-rules' || name === 'tag-implications'
+})
 const isUploadActive = computed(() => route.name === 'upload')
 const isFavoritesActive = computed(() => route.name === 'favorites')
 const isDupesActive = computed(() => route.name === 'duplicates')
@@ -148,9 +151,6 @@ router.afterEach((to) => {
 <template>
   <nav class="navbar has-background-black-ter is-fixed-top" role="navigation" aria-label="main-menu">
     <div class="navbar-brand">
-      <span class="navbar-item">
-        <strong><span>{{ store.pageTitle }}</span></strong>
-      </span>
       <a role="button" class="navbar-burger" :class="{ 'is-active': burgerActive }" aria-label="menu"
         :aria-expanded="burgerActive" @click="burgerActive = !burgerActive">
         <span aria-hidden="true"></span>
@@ -162,31 +162,42 @@ router.afterEach((to) => {
 
     <div class="navbar-menu" :class="{ 'is-active': burgerActive }">
       <div class="navbar-start">
+        <!-- Media -->
         <a class="navbar-item" :class="{ 'is-selected': isMediaActive }" @click="navigateMedia">
           <span class="icon"><i class="fa-solid fa-images"></i></span>
           <span>Media</span>
         </a>
+
+        <!-- Random -->
         <a class="navbar-item" @click="navigateRandom">
           <span class="icon"><i class="fa-solid fa-shuffle"></i></span>
           <span>Random</span>
         </a>
+
+        <!-- Tags -->
         <a class="navbar-item" :class="{ 'is-selected': isTagsActive }" @click="navigateTags">
           <span class="icon"><i class="fa-solid fa-tags"></i></span>
           <span>Tags</span>
         </a>
+
+        <!-- Favorites -->
         <a class="navbar-item" :class="{ 'is-selected': isFavoritesActive }" @click="navigateFavorites">
           <span class="icon"><i class="fa-solid fa-heart"></i></span>
           <span>Favorites</span>
           <span v-if="favorites.count > 0" class="tag is-rounded is-small ml-1">{{ favorites.count }}</span>
         </a>
-        <a v-if="authenticated" class="navbar-item" :class="{ 'is-selected': isUploadActive }" @click="navigateUpload">
-          <span class="icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
-          <span>Upload</span>
-        </a>
-        <a v-if="authenticated" class="navbar-item" :class="{ 'is-selected': isDupesActive }" @click="navigateDupes">
-          <span class="icon"><i class="fa-solid fa-clone"></i></span>
-          <span>Duplicates</span>
-        </a>
+
+        <!-- Admin items -->
+        <template v-if="authenticated">
+          <a class="navbar-item" :class="{ 'is-selected': isUploadActive }" @click="navigateUpload">
+            <span class="icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+            <span>Upload</span>
+          </a>
+          <a class="navbar-item" :class="{ 'is-selected': isDupesActive }" @click="navigateDupes">
+            <span class="icon"><i class="fa-solid fa-clone"></i></span>
+            <span>Duplicates</span>
+          </a>
+        </template>
       </div>
 
       <div class="navbar-end">
