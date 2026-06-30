@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-06-30
+
+### Added
+- **PHPStan static analysis** at level 8 (`backend/phpstan.neon`, `composer analyse`),
+  with the `phpstan-phpunit` extension and a CI gate. The whole backend is clean at level 8.
+- **`backend/API.md`** — a full HTTP API endpoint reference (auth model, response
+  envelope, rate limiting, and every endpoint grouped by resource).
+- Per-action route docblocks (`VERB /path`) on every controller, and `#[\NoDiscard]`
+  (PHP 8.5) on critical repository mutators whose return must be checked.
+
+### Changed
+- Collapsed the pass-through `Collection` layer into unified repositories
+  (`Gallery\Repository\TagRepository`, `TagCategoryRepository`, `DanbooruRulesRepository`);
+  `MediaCollection` keeps its real file/thumbnail behavior.
+- Controllers no longer hold the DI container (service-locator removed) — collaborators,
+  including a now lazily-initialized `DanbooruTagger`, are constructor-injected directly.
+- Structure classes (`Media`, `Tag`, `TagCategory`) now use PHP 8.4 **asymmetric
+  visibility** (`public private(set)`), dropping the getter boilerplate while keeping
+  reads public and writes encapsulated.
+- Cache groups are now a `CacheGroup` enum (was bare strings); request parameters go
+  through typed `intParam`/`stringParam`/`parsedBody` helpers; the `sanitizeTagName`
+  pipeline uses the PHP 8.5 pipe operator.
+
+### Fixed
+- `TagRepository::getOrCreate` no longer relies on an implicitly-defined `$name`
+  variable on the no-prefix path (surfaced by static analysis; now always initialized).
+
 ## [2.0.1] - 2026-06-28
 
 ### Added

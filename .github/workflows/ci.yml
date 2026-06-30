@@ -43,6 +43,9 @@ jobs:
       - name: Lint (phpcs / PSR-12)
         run: composer lint
 
+      - name: Static analysis (PHPStan level 8)
+        run: composer analyse
+
       - name: Test (PHPUnit + coverage)
         run: composer test:coverage
 

@@ -6,8 +6,9 @@ include/exclude tag search, automatic tag importing from Danbooru, perceptual
 duplicate detection, favorites, and admin-gated uploads.
 
 > - **[AGENTS.md](AGENTS.md)** — in-depth architecture, data model, and conventions.
+> - **[backend/API.md](backend/API.md)** — HTTP API endpoint reference.
 > - **[CONTRIBUTING.md](CONTRIBUTING.md)** — local setup, coding standards, and PR flow.
-> - **[CHANGELOG.md](CHANGELOG.md)** — release history (current version: **2.0.0**).
+> - **[CHANGELOG.md](CHANGELOG.md)** — release history (current version: **2.0.2**).
 
 ---
 
