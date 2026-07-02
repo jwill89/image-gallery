@@ -20,7 +20,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -31,7 +31,7 @@ jobs:
           coverage: pcov
 
       - name: Cache Composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: backend/vendor
           key: composer-${{ matrix.php }}-${{ hashFiles('backend/composer.lock') }}
@@ -64,7 +64,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive # frontend/eslint-config (shared @jwill89/eslint-config)
           # The default GITHUB_TOKEN can't read the private eslint-config repo, so
@@ -73,7 +73,7 @@ jobs:
           token: ${{ secrets.ESLINT_CONFIG_TOKEN || github.token }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
           cache: npm
