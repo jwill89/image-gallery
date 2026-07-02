@@ -102,17 +102,20 @@ export function hasAuthToken(): boolean {
 /**
  * Read a successful response body as JSON. A `204 No Content` (and any other
  * empty body) resolves to `undefined` rather than throwing on `response.json()`.
+ * The `T | undefined` return is deliberate: callers must handle the empty case,
+ * which keeps the defensive `?.`/`??` guards at call sites correct (and lets
+ * `no-unnecessary-condition` stay on).
  */
-async function parseJsonBody<T>(response: Response): Promise<T> {
+async function parseJsonBody<T>(response: Response): Promise<T | undefined> {
   if (response.status === 204) {
-    return undefined as T
+    return undefined
   }
   const text = await response.text()
-  return (text ? JSON.parse(text) : undefined) as T
+  return text ? (JSON.parse(text) as T) : undefined
 }
 
 export function useApi() {
-  async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  async function request<T>(url: string, options: RequestInit = {}): Promise<T | undefined> {
     // Attach auth token if available
     const token = getAuthToken()
     if (token) {
@@ -133,11 +136,11 @@ export function useApi() {
     return parseJsonBody<T>(response)
   }
 
-  function get<T>(url: string): Promise<T> {
+  function get<T>(url: string): Promise<T | undefined> {
     return request<T>(url)
   }
 
-  function post<T>(url: string, body: unknown): Promise<T> {
+  function post<T>(url: string, body: unknown): Promise<T | undefined> {
     return request<T>(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -145,7 +148,7 @@ export function useApi() {
     })
   }
 
-  function put<T>(url: string, body: unknown): Promise<T> {
+  function put<T>(url: string, body: unknown): Promise<T | undefined> {
     return request<T>(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -153,7 +156,7 @@ export function useApi() {
     })
   }
 
-  function patch<T>(url: string, body: unknown): Promise<T> {
+  function patch<T>(url: string, body: unknown): Promise<T | undefined> {
     return request<T>(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -161,7 +164,7 @@ export function useApi() {
     })
   }
 
-  function del<T>(url: string, body?: unknown): Promise<T> {
+  function del<T>(url: string, body?: unknown): Promise<T | undefined> {
     return request<T>(url, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -169,7 +172,7 @@ export function useApi() {
     })
   }
 
-  async function upload<T>(url: string, formData: FormData): Promise<T> {
+  async function upload<T>(url: string, formData: FormData): Promise<T | undefined> {
     const token = getAuthToken()
     const headers: HeadersInit = {}
     if (token) {

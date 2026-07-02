@@ -62,6 +62,7 @@ async function login() {
     const result = await api.post<LoginResponse>(endpoints.auth.login, {
       password: passwordInput.value,
     })
+    if (!result) throw new Error('No token returned')
     setAuthToken(result.token)
     authenticated.value = true
     passwordInput.value = ''
@@ -191,8 +192,7 @@ function onFileInput(e: Event) {
 }
 
 function removeFile(index: number) {
-  const file = selectedFiles.value[index]
-  if (file) animatedGifs.value.delete(fileKey(file))
+  animatedGifs.value.delete(fileKey(selectedFiles.value[index]))
   selectedFiles.value = selectedFiles.value.filter((_, i) => i !== index)
 }
 
@@ -227,6 +227,7 @@ async function uploadFiles() {
       total_failed: number
       total_tags_applied?: number
     }>(endpoints.media.upload, formData)
+    if (!result) throw new Error('No response from the upload request')
 
     uploadResults.value = result.results
 

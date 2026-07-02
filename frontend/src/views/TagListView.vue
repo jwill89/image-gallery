@@ -128,7 +128,7 @@ async function loadTags(showSpinner = true) {
   if (showSpinner) loading.value = true
   loadFailed.value = false
   try {
-    allDisplayTags.value = await api.get<TagListItem[]>(endpoints.tags.display)
+    allDisplayTags.value = (await api.get<TagListItem[]>(endpoints.tags.display)) ?? []
   } catch (e) {
     toastStore.error(getErrorMessage(e, 'Failed to load tags'))
     loadFailed.value = true

@@ -39,7 +39,7 @@ async function loadCategories() {
   loading.value = true
   loadFailed.value = false
   try {
-    categories.value = await api.get<TagCategory[]>(endpoints.tagCategories.list)
+    categories.value = (await api.get<TagCategory[]>(endpoints.tagCategories.list)) ?? []
   } catch (e) {
     toastStore.error(getErrorMessage(e, 'Failed to load categories.'))
     loadFailed.value = true

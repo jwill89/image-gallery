@@ -23,7 +23,7 @@ export function useMediaTags() {
         api.get<MediaItem>(endpoints.media.byId(mediaId)),
         api.get<Tag[]>(endpoints.media.tags(mediaId)),
       ])
-      mediaItem.value = item
+      mediaItem.value = item ?? null
       tags.value = itemTags ?? []
     } catch (e) {
       toastStore.error(getErrorMessage(e, 'Failed to load media'))

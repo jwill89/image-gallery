@@ -77,6 +77,7 @@ async function navigateRandom() {
       return
     }
     const item = await api.get<Media>(endpoints.media.random)
+    if (!item) return
 
     // Clear gallery context so arrow keys are disabled for random access
     store.lastViewedItemIds = []
@@ -151,7 +152,7 @@ router.afterEach((to) => {
   } else if (!to.name?.toString().includes('with-tags') || to.params.tags === 'untagged') {
     selectedTags.value = []
   }
-  if (to.params.perPage != null && to.params.perPage !== '') {
+  if (to.params.perPage !== '') {
     const pp = Number(to.params.perPage)
     perPage.value = isNaN(pp) ? 40 : pp
   }

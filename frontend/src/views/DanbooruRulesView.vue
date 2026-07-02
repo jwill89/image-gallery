@@ -38,11 +38,12 @@ const tagHelpClass = ref('')
 const tagLoading = ref(false)
 
 async function loadCategoryMappings() {
-  categoryMappings.value = await api.get<CategoryMapping[]>(endpoints.danbooru.categoryMappings)
+  categoryMappings.value =
+    (await api.get<CategoryMapping[]>(endpoints.danbooru.categoryMappings)) ?? []
 }
 
 async function loadTagMappings() {
-  tagMappings.value = await api.get<TagMapping[]>(endpoints.danbooru.tagMappings)
+  tagMappings.value = (await api.get<TagMapping[]>(endpoints.danbooru.tagMappings)) ?? []
 }
 
 async function loadRules() {

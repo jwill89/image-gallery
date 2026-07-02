@@ -41,6 +41,7 @@ async function login() {
     const result = await api.post<LoginResponse>(endpoints.auth.login, {
       password: passwordInput.value,
     })
+    if (!result) throw new Error('No token returned')
     setAuthToken(result.token)
     authenticated.value = true
     passwordInput.value = ''
@@ -57,7 +58,7 @@ async function loadReport() {
   loadFailed.value = false
 
   try {
-    report.value = await api.get<DuplicateReport>(endpoints.duplicates.report)
+    report.value = (await api.get<DuplicateReport>(endpoints.duplicates.report)) ?? null
   } catch (e) {
     const status = getErrorStatus(e)
     if (status === 401) {
@@ -110,7 +111,7 @@ async function deleteSelected() {
     const ids = Array.from(selectedMedia.value)
     const result = await api.post<BulkDeleteResult>(endpoints.media.bulkDelete, { media_ids: ids })
     toastStore.success(
-      `${result.total_deleted} media item(s) removed from the database.`,
+      `${result?.total_deleted ?? 0} media item(s) removed from the database.`,
       4000,
       'Media Deleted',
     )

@@ -223,9 +223,10 @@ async function fetchDanbooruTags() {
       endpoints.media.danbooruTags(props.mediaId),
       payload,
     )
+    if (!data) throw new Error('No response from Danbooru import')
 
-    tags.value = data.tags ?? []
-    store.allTags = data.all_tags ?? store.allTags
+    tags.value = data.tags
+    store.allTags = data.all_tags
     danbooruResult.value = {
       method: data.method,
       tags_applied: data.tags_applied,

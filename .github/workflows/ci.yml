@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend — PHP ${{ matrix.php }} (lint + tests)
+    name: Backend (PHP / Slim)
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -55,11 +55,11 @@ jobs:
         run: composer test:coverage
 
   frontend:
-    name: Frontend — Node ${{ matrix.node }} (build + tests)
+    name: Frontend (Vue / Vite)
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ['22']
+        node: ['24']
     defaults:
       run:
         working-directory: frontend
@@ -67,6 +67,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive # frontend/eslint-config (shared @jwill89/eslint-config)
+          # The default GITHUB_TOKEN can't read the private eslint-config repo, so
+          # supply a PAT with read access to both repos (checkout reuses it for
+          # submodule fetches on github.com). Falls back to GITHUB_TOKEN locally.
+          token: ${{ secrets.ESLINT_CONFIG_TOKEN || github.token }}
 
       - name: Set up Node
         uses: actions/setup-node@v4

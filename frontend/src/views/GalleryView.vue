@@ -41,9 +41,7 @@ let observer: IntersectionObserver | null = null
 const displayItems = computed(() => (isInfiniteScroll.value ? accumulatedItems.value : items.value))
 
 function updateStoreItemIds() {
-  store.lastViewedItemIds = displayItems.value
-    .map((i) => i.media_id)
-    .filter((id): id is number => id != null)
+  store.lastViewedItemIds = displayItems.value.map((i) => i.media_id)
 }
 
 async function loadPage() {
@@ -79,7 +77,7 @@ async function prefetchAdjacentPage(page: number, perPage: number, tags?: string
 
   try {
     const data = await api.get<MediaPage>(listUrl(page, perPage, tags))
-    if (data?.items?.length) {
+    if (data?.items.length) {
       prefetchThumbnails(data.items)
     }
   } catch {

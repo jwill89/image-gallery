@@ -19,7 +19,8 @@ function thumbnailUrls(items: MediaItem[]): string[] {
  * Silently does nothing if the SW isn't available.
  */
 export function prefetchThumbnails(items: MediaItem[]): void {
-  if (!navigator.serviceWorker?.controller || items.length === 0) return
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller || items.length === 0)
+    return
 
   const urls = thumbnailUrls(items)
   navigator.serviceWorker.controller.postMessage({

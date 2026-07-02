@@ -66,9 +66,9 @@ async function loadData() {
       api.get<TagImplication[]>(endpoints.tagImplications.list),
     ])
 
-    allTags.value = tags
-    allImplications.value = implications
-    tagInfo.value = tags.find((t) => t.tag_id === props.tagId) ?? null
+    allTags.value = tags ?? []
+    allImplications.value = implications ?? []
+    tagInfo.value = allTags.value.find((t) => t.tag_id === props.tagId) ?? null
   } catch (e) {
     toastStore.error(getErrorMessage(e, 'Failed to load tag data'))
     loadFailed.value = true
@@ -115,7 +115,7 @@ async function submitImplication() {
       tag_id: props.tagId,
       implied_tag_id: impliedTagId.value,
     })
-    allImplications.value = await api.get<TagImplication[]>(endpoints.tagImplications.list)
+    allImplications.value = (await api.get<TagImplication[]>(endpoints.tagImplications.list)) ?? []
     closeModal()
     toastStore.success('Implication added.')
   } catch (e) {
@@ -136,7 +136,7 @@ async function removeImplication(tagId: number, impliedTagId: number) {
 
   try {
     await api.del(endpoints.tagImplications.byPair(tagId, impliedTagId))
-    allImplications.value = await api.get<TagImplication[]>(endpoints.tagImplications.list)
+    allImplications.value = (await api.get<TagImplication[]>(endpoints.tagImplications.list)) ?? []
     toastStore.success('Implication removed.')
   } catch (e) {
     toastStore.error(getErrorMessage(e, 'Failed to remove implication'))

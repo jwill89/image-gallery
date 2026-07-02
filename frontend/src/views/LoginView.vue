@@ -22,6 +22,7 @@ async function login() {
     const result = await api.post<LoginResponse>(endpoints.auth.login, {
       password: passwordInput.value,
     })
+    if (!result) throw new Error('No token returned')
     setAuthToken(result.token)
     passwordInput.value = ''
     void router.replace('/')
