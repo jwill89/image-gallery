@@ -5,6 +5,45 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-07-03
+
+Frontend UX and accessibility improvements to the media gallery. No API changes
+(the HTTP contract remains at `3.0.0`).
+
+### Added
+
+- **Jump-to-page** field built into the pagination bar — type a page number and
+  press Enter to go straight there. Out-of-range entries are clamped to the last
+  page. Shown only when there are more than 5 pages.
+- **Infinite scroll** is now a dedicated navbar toggle (persisted in
+  `localStorage`, like the blur toggle) instead of an option hidden inside the
+  items-per-page dropdown. Enabling it disables the items-per-page selector.
+- Current gallery item count on the admin **Upload** page for reference.
+
+### Changed
+
+- The media grid uses a wider content container on large / high-DPI displays
+  (up to 2200px) so it fills the viewport instead of stranding large empty side
+  margins; unchanged on smaller screens.
+- Gallery thumbnail cards are keyboard-navigable — focusable, with Enter/Space to
+  open — and carry descriptive `alt` text / accessible names.
+- Favorite (heart) button hit target enlarged to 44×44px, with higher contrast.
+- Pagination now meets **WCAG AA**: current-page, disabled Previous/Next, and the
+  ellipsis all clear a 4.5:1 contrast ratio.
+- Navbar toggles and icon-only controls (blur, infinite scroll, untagged filter)
+  gained `aria-label` / `aria-pressed` state.
+
+### Removed
+
+- The redundant "Media — Page X of Y" header row above the gallery (the
+  highlighted page number already indicates position) and the always-visible
+  total item count from the gallery view.
+
+### Fixed
+
+- Legacy `perPage=0` URLs (the previous infinite-scroll sentinel) now fall back to
+  the default page size instead of reaching the API with an invalid value.
+
 ## [3.0.0] - 2026-07-01
 
 A rework of the HTTP API into a **hybrid REST-RPC** design with a

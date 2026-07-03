@@ -30,7 +30,8 @@ const api = useApi()
 const { items, totalPages, loading, loadFailed, fetchPage } = useGalleryData()
 
 const INFINITE_BATCH_SIZE = 40
-const isInfiniteScroll = computed(() => props.perPage === 0)
+// Infinite scroll is a global preference (toggle in the navbar), not a URL param.
+const isInfiniteScroll = computed(() => store.infiniteScroll)
 const accumulatedItems = ref<MediaItem[]>([])
 const currentBatchPage = ref(1)
 const loadingMore = ref(false)
@@ -143,7 +144,7 @@ onMounted(() => {
   void loadPage()
   window.addEventListener('keydown', onKeydown)
 })
-watch(() => [props.page, props.perPage, props.tags], loadPage)
+watch(() => [props.page, props.perPage, props.tags, store.infiniteScroll], loadPage)
 onUnmounted(() => {
   observer?.disconnect()
   window.removeEventListener('keydown', onKeydown)
@@ -173,7 +174,7 @@ function onCardClick(id: number) {
 
 <template>
   <section class="section">
-    <div class="container">
+    <div class="gallery-container">
       <LoadingSpinner v-if="loading" />
 
       <div v-else-if="loadFailed || displayItems.length === 0" class="has-text-centered py-6">

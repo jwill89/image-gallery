@@ -62,7 +62,7 @@ watch(() => favorites.count, loadFavorites)
 
 <template>
   <section class="section">
-    <div class="container">
+    <div class="gallery-container">
       <h1 class="title">
         <span class="icon mr-2"><i class="fa-solid fa-heart" /></span>
         Favorites

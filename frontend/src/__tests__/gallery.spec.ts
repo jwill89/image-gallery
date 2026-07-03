@@ -26,6 +26,23 @@ describe('gallery store', () => {
     expect(useGalleryStore().blurThumbnails).toBe(true)
   })
 
+  it('toggles infinite scroll and persists the preference', async () => {
+    const store = useGalleryStore()
+    expect(store.infiniteScroll).toBe(false)
+
+    store.toggleInfiniteScroll()
+    expect(store.infiniteScroll).toBe(true)
+    await nextTick()
+    expect(localStorage.getItem('infiniteScroll')).toBe('true')
+  })
+
+  it('reads the initial infinite-scroll preference from localStorage', () => {
+    localStorage.setItem('infiniteScroll', 'true')
+    setActivePinia(createPinia())
+
+    expect(useGalleryStore().infiniteScroll).toBe(true)
+  })
+
   it('derives tagNames from allTags', () => {
     const store = useGalleryStore()
     store.allTags = [

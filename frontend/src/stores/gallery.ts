@@ -17,6 +17,7 @@ export const useGalleryStore = defineStore('gallery', () => {
   const categories = ref<TagCategory[]>([])
   const totalMedia = ref(0)
   const blurThumbnails = ref(localStorage.getItem('blurThumbnails') === 'true')
+  const infiniteScroll = ref(localStorage.getItem('infiniteScroll') === 'true')
   const loading = ref(false)
   const error = ref<string | null>(null)
   const initialized = ref(false)
@@ -25,6 +26,11 @@ export const useGalleryStore = defineStore('gallery', () => {
   // Persist blur preference
   watch(blurThumbnails, (val) => {
     localStorage.setItem('blurThumbnails', String(val))
+  })
+
+  // Persist infinite-scroll preference
+  watch(infiniteScroll, (val) => {
+    localStorage.setItem('infiniteScroll', String(val))
   })
 
   // Getters
@@ -77,12 +83,17 @@ export const useGalleryStore = defineStore('gallery', () => {
     blurThumbnails.value = !blurThumbnails.value
   }
 
+  function toggleInfiniteScroll() {
+    infiniteScroll.value = !infiniteScroll.value
+  }
+
   return {
     pageTitle,
     allTags,
     categories,
     totalMedia,
     blurThumbnails,
+    infiniteScroll,
     loading,
     error,
     lastViewedItemIds,
@@ -91,5 +102,6 @@ export const useGalleryStore = defineStore('gallery', () => {
     refreshTags,
     refreshTotals,
     toggleBlur,
+    toggleInfiniteScroll,
   }
 })

@@ -321,7 +321,10 @@ async function uploadFiles() {
 
       <!-- Authenticated Content -->
       <template v-else>
-        <h1 class="title">Upload Media</h1>
+        <h1 class="title mb-2">Upload Media</h1>
+        <p class="subtitle is-6 has-text-grey">
+          {{ store.totalMedia.toLocaleString() }} items currently in the gallery
+        </p>
 
         <!-- Danbooru Tag Fetch Toggle -->
         <div class="field">

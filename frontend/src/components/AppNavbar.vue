@@ -154,7 +154,9 @@ router.afterEach((to) => {
   }
   if (to.params.perPage !== '') {
     const pp = Number(to.params.perPage)
-    perPage.value = isNaN(pp) ? 40 : pp
+    // Guard against stale/invalid values (e.g. the legacy `0` = infinite-scroll
+    // sentinel, now a separate toggle) so the select doesn't render blank.
+    perPage.value = isNaN(pp) || pp < 1 ? 40 : pp
   }
 })
 </script>
@@ -232,6 +234,8 @@ router.afterEach((to) => {
           <button
             class="button"
             :class="{ 'is-success': store.blurThumbnails }"
+            :aria-pressed="store.blurThumbnails"
+            aria-label="Toggle thumbnail blur"
             @click="store.toggleBlur"
           >
             Blur: {{ store.blurThumbnails ? 'On' : 'Off' }}
@@ -239,16 +243,34 @@ router.afterEach((to) => {
         </div>
 
         <div class="navbar-item">
+          <button
+            class="button"
+            :class="{ 'is-success': store.infiniteScroll }"
+            :aria-pressed="store.infiniteScroll"
+            aria-label="Toggle infinite scroll"
+            title="When on, load pages continuously as you scroll (disables items-per-page)"
+            @click="store.toggleInfiniteScroll"
+          >
+            Infinite Scroll: {{ store.infiniteScroll ? 'On' : 'Off' }}
+          </button>
+        </div>
+
+        <div class="navbar-item">
           <div class="field">
             <div class="control has-icons-left">
               <div class="select">
-                <select v-model.number="perPage" title="Items Per-Page" @change="onPerPageChange">
+                <select
+                  v-model.number="perPage"
+                  title="Items Per-Page"
+                  aria-label="Items per page"
+                  :disabled="store.infiniteScroll"
+                  @change="onPerPageChange"
+                >
                   <option :value="15">15 Items Per-Page</option>
                   <option :value="30">30 Items Per-Page</option>
                   <option :value="40">40 Items Per-Page</option>
                   <option :value="60">60 Items Per-Page</option>
                   <option :value="100">100 Items Per-Page</option>
-                  <option :value="0">Infinite Scroll</option>
                 </select>
               </div>
               <div class="icon is-left">
@@ -272,6 +294,8 @@ router.afterEach((to) => {
                 class="button"
                 :class="{ 'is-warning': isUntaggedActive }"
                 title="Show untagged media"
+                aria-label="Show untagged media"
+                :aria-pressed="isUntaggedActive"
                 @click="searchUntagged"
               >
                 <span class="icon"><i class="fa-solid fa-ban" /></span>

@@ -406,14 +406,31 @@
     color: #e8eaed;
   }
 
+  /* indigo-600 (not -500) so white text clears 4.5:1 AA (was 4.47:1). */
   .pagination-link.is-current {
-    background-color: #6366f1;
-    border-color: #6366f1;
+    background-color: #4f46e5;
+    border-color: #4f46e5;
     color: #ffffff;
   }
 
+  /* #9ca3af clears 4.5:1 on the dark background (the old #6b7280 was ~3:1). */
   .pagination-ellipsis {
-    color: #6b7280;
+    color: #9ca3af;
+  }
+
+  /* Disabled Previous/Next: still legible (AA) but visibly inert. */
+  .pagination-previous.is-disabled,
+  .pagination-next.is-disabled {
+    color: #9ca3af;
+    border-color: #2e3346;
+    background-color: transparent;
+    cursor: not-allowed;
+  }
+
+  .pagination-previous.is-disabled:hover,
+  .pagination-next.is-disabled:hover {
+    border-color: #2e3346;
+    color: #9ca3af;
   }
 
   /* ── Notification dark mode ───────────────────────────── */
@@ -580,6 +597,18 @@
 /* ═══════════════════════════════════════════════════════════
    Layout
    ═══════════════════════════════════════════════════════════ */
+
+/* Gallery pages use a wider content column than Bulma's fixed `.container`
+   (~1344px on fullhd) so the media wall fills large / high-DPI displays
+   instead of stranding empty side margins. Capped so tiles don't sprawl on
+   ultrawide monitors. */
+.gallery-container {
+  width: 100%;
+  max-width: 2200px;
+  margin-inline: auto;
+  /* No horizontal padding here — the wrapping `.section` already supplies it.
+     Adding more double-pads on mobile and costs a grid column. */
+}
 
 .parent {
   display: flex;

@@ -16,7 +16,7 @@ const router = createRouter({
         const pp = Number(route.params.perPage)
         return {
           page: Number(route.params.page) || 1,
-          perPage: isNaN(pp) ? 40 : pp,
+          perPage: isNaN(pp) || pp < 1 ? 40 : pp,
         }
       },
     },
@@ -29,7 +29,7 @@ const router = createRouter({
         const pp = Number(route.params.perPage)
         return {
           page: Number(route.params.page) || 1,
-          perPage: isNaN(pp) ? 40 : pp,
+          perPage: isNaN(pp) || pp < 1 ? 40 : pp,
           tags: route.params.tags as string,
         }
       },

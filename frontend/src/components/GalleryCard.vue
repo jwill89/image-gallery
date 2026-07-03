@@ -27,21 +27,41 @@ const isAnimated = computed(() => {
 
 const isFav = computed(() => favorites.isFavorite(props.item.media_id))
 
+/** Descriptive text for the thumbnail / its link (filenames are all we have). */
+const altText = computed(() => {
+  const kind = props.item.media_type === 'video' ? 'Video' : 'Image'
+  return `${kind}: ${baseName.value}`
+})
+
 function toggleFavorite(e: Event) {
   e.stopPropagation()
   favorites.toggle(props.item.media_id)
 }
+
+/** Activate the card (Enter / Space) for keyboard users, mirroring a click. */
+function onCardKey(e: KeyboardEvent) {
+  e.preventDefault()
+  emit('click', props.item.media_id)
+}
 </script>
 
 <template>
-  <div class="gallery-card" @click="emit('click', item.media_id)">
+  <div
+    class="gallery-card"
+    role="link"
+    tabindex="0"
+    :aria-label="altText"
+    @click="emit('click', item.media_id)"
+    @keydown.enter="onCardKey"
+    @keydown.space="onCardKey"
+  >
     <div class="gallery-card-inner">
       <div class="gallery-card-thumb">
         <img
           :class="['gallery-card-img', { 'thumb-blur': store.blurThumbnails }]"
           :src="thumbnailPath"
           :srcset="`${thumbnail2xPath} 2x`"
-          alt=""
+          :alt="altText"
         />
         <!-- Animated badge (videos and GIFs) -->
         <span v-if="isAnimated" class="gallery-card-badge">
@@ -49,9 +69,12 @@ function toggleFavorite(e: Event) {
         </span>
         <!-- Favorite heart -->
         <button
+          type="button"
           class="gallery-card-heart"
           :class="{ 'is-favorited': isFav }"
           :title="isFav ? 'Remove from favorites' : 'Add to favorites'"
+          :aria-label="isFav ? 'Remove from favorites' : 'Add to favorites'"
+          :aria-pressed="isFav"
           @click="toggleFavorite"
         >
           <i :class="isFav ? 'fa-solid fa-heart' : 'fa-regular fa-heart'" />
@@ -71,6 +94,12 @@ function toggleFavorite(e: Event) {
      hint matches the 200px card height so the scrollbar stays stable. */
   content-visibility: auto;
   contain-intrinsic-size: 200px 200px;
+}
+
+.gallery-card:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 .gallery-card-inner {
@@ -118,7 +147,7 @@ function toggleFavorite(e: Event) {
   right: 4px;
   background: rgba(0, 0, 0, 0.6);
   border: none;
-  color: #aaa;
+  color: #d1d5db; /* ≥4.5:1 on the dark chip (was #aaa ≈ 2.9:1) */
   font-size: 0.85rem;
   padding: 4px 6px;
   border-radius: 4px;
@@ -129,6 +158,23 @@ function toggleFavorite(e: Event) {
     color 0.15s,
     transform 0.15s;
   line-height: 1;
+}
+
+/* Expand the tap/click target to ≥44px without enlarging the visible chip. */
+.gallery-card-heart::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.gallery-card-heart:focus-visible {
+  opacity: 1;
+  outline: 2px solid #818cf8;
+  outline-offset: 1px;
 }
 
 .gallery-card:hover .gallery-card-heart,
