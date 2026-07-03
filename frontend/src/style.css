@@ -610,6 +610,15 @@
      Adding more double-pads on mobile and costs a grid column. */
 }
 
+/* Detail pages (e.g. media + tags) opt into a wider column than Bulma's fixed
+   `.container` (~1344px) so the image and side panel use the available width
+   instead of stranding empty margins, but capped tighter than the media wall. */
+.container.is-wide {
+  width: 100%;
+  max-width: 1500px;
+  margin-inline: auto;
+}
+
 .parent {
   display: flex;
   flex-direction: row;

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { useGalleryStore } from '../stores/gallery'
-
-const store = useGalleryStore()
 const version = __APP_VERSION__
 </script>
 
@@ -9,29 +6,14 @@ const version = __APP_VERSION__
   <footer class="footer is-flex-align-items-flex-end mt-auto">
     <div class="content has-text-centered">
       <p>
-        Programmed by <a href="https://www.mathdad.me" target="_blank">MathDad</a>. Built with
-        <a href="https://vuejs.org" target="_blank">Vue</a> and
-        <a href="https://bulma.io/" target="_blank">Bulma</a>.<br />
-        Repository on <a href="https://github.com/jwill89/simple-image-gallery/">GitHub</a>. The
-        source code is licensed under the
-        <a href="https://opensource.org/licenses/mit-license.php" target="_blank">MIT</a>
-        license.<br />
-        All images &copy; their respective creators.<br />
-        All characters in images &copy; their respective owners.
+        Programmed by <a href="https://www.mathdad.me" target="_blank">MathDad</a>. View project on
+        <a href="https://github.com/jwill89/image-gallery">GitHub</a>.<br />
+        All images &copy; their respective creators. All characters in images &copy; their
+        respective owners.
       </p>
       <p class="is-size-7 has-text-grey">
         Gallery <a href="/api/docs" target="_blank" rel="noopener">v{{ version }}</a>
       </p>
-      <div class="level">
-        <div class="level-item has-text-centered">
-          <div>
-            <p class="heading mb-0">Media</p>
-            <h3 class="m-0">
-              {{ store.totalMedia }}
-            </h3>
-          </div>
-        </div>
-      </div>
     </div>
   </footer>
 </template>

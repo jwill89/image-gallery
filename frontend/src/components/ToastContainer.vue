@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useToastStore } from '../stores/toast'
+import { useToastStore, type ToastAction } from '../stores/toast'
 
 const toastStore = useToastStore()
 
@@ -8,6 +8,12 @@ const iconMap: Record<string, string> = {
   danger: 'fa-solid fa-circle-exclamation',
   warning: 'fa-solid fa-triangle-exclamation',
   info: 'fa-solid fa-circle-info',
+}
+
+/** Run a toast's action (e.g. Undo), then dismiss the toast. */
+function runAction(id: number, action: ToastAction) {
+  action.handler()
+  toastStore.remove(id)
 }
 </script>
 
@@ -30,6 +36,13 @@ const iconMap: Record<string, string> = {
           <div class="toast-message">
             {{ toast.message }}
           </div>
+          <button
+            v-if="toast.action"
+            class="toast-action"
+            @click="runAction(toast.id, toast.action)"
+          >
+            {{ toast.action.label }}
+          </button>
         </div>
         <button class="toast-close" aria-label="Dismiss" @click="toastStore.remove(toast.id)">
           <i class="fa-solid fa-xmark" />
@@ -124,6 +137,25 @@ const iconMap: Record<string, string> = {
   line-height: 1.45;
   color: #b5b5b5;
   margin-top: 2px;
+}
+
+/* ── Action button (e.g. Undo) ─────────────────────────── */
+
+.toast-action {
+  margin-top: 8px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gallery-tag-dark-text);
+  background: var(--gallery-indigo);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.toast-action:hover {
+  background: color-mix(in srgb, var(--gallery-indigo) 85%, black);
 }
 
 /* ── Close button ──────────────────────────────────────── */

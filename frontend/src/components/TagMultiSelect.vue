@@ -207,9 +207,11 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border: 1px solid #14161a;
+  /* Lighter surface + visible border so the field reads as an input rather
+     than blending into the page background. */
+  border: 1px solid #4a4a4a;
   border-radius: 4px;
-  background: #14161a;
+  background: #2b2b2b;
   min-height: 40px;
   max-height: 120px;
   overflow-y: auto;
@@ -256,8 +258,8 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   left: 0;
   right: 0;
   z-index: 100;
-  background: #14161a;
-  border: 1px solid #363636;
+  background: #2b2b2b;
+  border: 1px solid #4a4a4a;
   border-top: none;
   border-radius: 0 0 4px 4px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
@@ -273,7 +275,7 @@ defineExpose({ focus: () => inputRef.value?.focus() })
 
 .tag-dropdown-item:hover,
 .tag-dropdown-item.is-highlighted {
-  background: #242424;
+  background: #3a3a3a;
 }
 
 .tag-dropdown-footer {

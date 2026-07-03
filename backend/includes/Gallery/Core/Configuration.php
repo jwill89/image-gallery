@@ -11,7 +11,7 @@ namespace Gallery\Core;
 class Configuration
 {
     /** Application version (SemVer). Surfaced in the OpenAPI spec and GET /version. */
-    public const string VERSION = '3.1.0';
+    public const string VERSION = '3.2.0';
 
     /** The OpenAPI/HTTP API contract version. Bumped on breaking API changes. */
     public const string API_VERSION = '3.0.0';

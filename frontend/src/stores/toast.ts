@@ -1,12 +1,19 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+/** Optional action button rendered inside a toast (e.g. "Undo"). */
+export interface ToastAction {
+  label: string
+  handler: () => void
+}
+
 export interface Toast {
   id: number
   title: string
   message: string
   type: 'success' | 'danger' | 'warning' | 'info'
   duration: number
+  action?: ToastAction
 }
 
 const TYPE_TITLES: Record<Toast['type'], string> = {
@@ -21,7 +28,13 @@ let nextId = 0
 export const useToastStore = defineStore('toast', () => {
   const toasts = ref<Toast[]>([])
 
-  function add(message: string, type: Toast['type'] = 'danger', duration = 5000, title?: string) {
+  function add(
+    message: string,
+    type: Toast['type'] = 'danger',
+    duration = 5000,
+    title?: string,
+    action?: ToastAction,
+  ) {
     const id = nextId++
     toasts.value.push({
       id,
@@ -29,6 +42,7 @@ export const useToastStore = defineStore('toast', () => {
       message,
       type,
       duration,
+      action,
     })
 
     if (duration > 0) {

@@ -36,6 +36,9 @@ const isTagsActive = computed(() => {
 })
 const isUploadActive = computed(() => route.name === 'upload')
 const isFavoritesActive = computed(() => route.name === 'favorites')
+// Infinite-scroll and items-per-page only affect gallery listings, so hide them
+// on the single-item detail view where they do nothing.
+const isDetailView = computed(() => route.name === 'media-tags')
 const isDupesActive = computed(() => route.name === 'duplicates')
 const isLoginActive = computed(() => route.name === 'login')
 
@@ -242,7 +245,7 @@ router.afterEach((to) => {
           </button>
         </div>
 
-        <div class="navbar-item">
+        <div v-if="!isDetailView" class="navbar-item">
           <button
             class="button"
             :class="{ 'is-success': store.infiniteScroll }"
@@ -255,7 +258,7 @@ router.afterEach((to) => {
           </button>
         </div>
 
-        <div class="navbar-item">
+        <div v-if="!isDetailView" class="navbar-item">
           <div class="field">
             <div class="control has-icons-left">
               <div class="select">

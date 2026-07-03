@@ -7,7 +7,7 @@ import { useToastStore } from '../stores/toast'
 import { useApi, getErrorMessage, hasAuthToken } from '../composables/useApi'
 import { useFavoritesStore } from '../stores/favorites'
 import { endpoints } from '../api/endpoints'
-import type { DanbooruFetchResult } from '../types'
+import type { DanbooruFetchResult, Tag } from '../types'
 import TagMultiSelect from '../components/TagMultiSelect.vue'
 import TagBadge from '../components/TagBadge.vue'
 import TagShortcodeModal from '../components/TagShortcodeModal.vue'
@@ -27,6 +27,7 @@ const { tags, mediaItem, loading, loadFailed, fetchMediaAndTags, addTags, remove
 
 const showHelpModal = ref(false)
 const showDeleteModal = ref(false)
+const menuOpen = ref(false)
 const deleting = ref(false)
 const authenticated = ref(hasAuthToken())
 const mediaUrl = ref('')
@@ -52,6 +53,40 @@ const SWIPE_MAX_TIME = 400 // max ms for a swipe
 const SWIPE_ANGLE_LIMIT = 30 // max degrees from horizontal
 
 const appliedTagIds = computed(() => tags.value.map((t) => t.tag_id))
+
+const mediaAltText = computed(() => `Media #${props.mediaId}`)
+
+/**
+ * Group the applied tags by category so the "Current Tags" cloud reads as
+ * labeled sections (Artist / Copyright / General / Meta …) instead of one flat
+ * wall. Categories are ordered by their `sort_order`; tags are alphabetised
+ * within each group.
+ */
+const groupedTags = computed(() => {
+  const sortOrderById = new Map(store.categories.map((c) => [c.category_id, c.sort_order]))
+  const nameById = new Map(store.categories.map((c) => [c.category_id, c.category_name]))
+  const groups = new Map<number, { name: string; sortOrder: number; tags: Tag[] }>()
+
+  for (const tag of tags.value) {
+    let group = groups.get(tag.category_id)
+    if (!group) {
+      group = {
+        name: nameById.get(tag.category_id) ?? 'Other',
+        sortOrder: sortOrderById.get(tag.category_id) ?? Number.MAX_SAFE_INTEGER,
+        tags: [],
+      }
+      groups.set(tag.category_id, group)
+    }
+    group.tags.push(tag)
+  }
+
+  return [...groups.values()]
+    .map((g) => ({
+      ...g,
+      tags: [...g.tags].sort((a, b) => a.tag_name.localeCompare(b.tag_name)),
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+})
 
 const formattedDate = computed(() => {
   if (!mediaItem.value?.file_time) return ''
@@ -124,9 +159,41 @@ async function onAddTags() {
 }
 
 async function onRemoveTag(tagId: number) {
-  if (confirm('Are you sure you want to remove this tag?')) {
-    await removeTag(props.mediaId, tagId)
+  // Removing a tag is trivially reversible, so skip a blocking confirm and
+  // offer an Undo toast instead — far less friction when cleaning up a list.
+  const removed = tags.value.find((t) => t.tag_id === tagId)
+  await removeTag(props.mediaId, tagId)
+  if (removed) {
+    toastStore.add(`Removed tag "${removed.tag_name}".`, 'info', 6000, 'Tag Removed', {
+      label: 'Undo',
+      handler: () => void addTags(props.mediaId, [removed.tag_id]),
+    })
   }
+}
+
+async function copyHash() {
+  const hash = mediaItem.value?.hash
+  if (!hash) return
+  try {
+    await navigator.clipboard.writeText(hash)
+    toastStore.success('MD5 hash copied to clipboard.')
+  } catch {
+    toastStore.error('Could not copy the hash to the clipboard.')
+  }
+}
+
+function closeMenu() {
+  menuOpen.value = false
+}
+
+function onFetchTagsClick() {
+  closeMenu()
+  openDanbooruModal()
+}
+
+function onDeleteClick() {
+  closeMenu()
+  showDeleteModal.value = true
 }
 
 const isVideo = (url: string) => {
@@ -248,8 +315,15 @@ function onGlobalKeydown(e: KeyboardEvent) {
   else if (e.key === 'ArrowRight') navigateNext()
 }
 
-onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', onGlobalKeydown)
+  // Close the overflow menu on any outside click (the trigger stops propagation).
+  window.addEventListener('click', closeMenu)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('click', closeMenu)
+})
 
 // ── Touch/swipe navigation for mobile ──────────────────────
 
@@ -284,7 +358,7 @@ function onTouchEnd(e: TouchEvent) {
 
 <template>
   <section class="section">
-    <div class="container">
+    <div class="container is-wide">
       <LoadingSpinner v-if="loading && !mediaItem" />
       <div v-else-if="loadFailed && !mediaItem" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
@@ -329,7 +403,7 @@ function onTouchEnd(e: TouchEvent) {
               <img
                 v-else-if="mediaUrl"
                 :src="mediaUrl"
-                alt=""
+                :alt="mediaAltText"
                 :class="[
                   'media-fade',
                   { 'is-loaded': mediaReady, 'thumb-blur': store.blurThumbnails },
@@ -350,7 +424,7 @@ function onTouchEnd(e: TouchEvent) {
                 <div v-if="hasGalleryContext" class="field has-addons mb-0">
                   <div class="control">
                     <button
-                      class="button is-indigo is-outlined"
+                      class="button is-indigo"
                       :disabled="prevId == null"
                       title="Previous (← or swipe right)"
                       @click="navigatePrev"
@@ -360,7 +434,7 @@ function onTouchEnd(e: TouchEvent) {
                   </div>
                   <div class="control">
                     <button
-                      class="button is-indigo is-outlined"
+                      class="button is-indigo"
                       :disabled="nextId == null"
                       title="Next (→ or swipe left)"
                       @click="navigateNext"
@@ -373,7 +447,8 @@ function onTouchEnd(e: TouchEvent) {
               <div class="toolbar-actions">
                 <button
                   class="button"
-                  :class="favorites.isFavorite(mediaId) ? 'is-pink' : 'is-pink is-outlined'"
+                  :class="favorites.isFavorite(mediaId) ? 'is-pink' : 'is-dark'"
+                  :aria-pressed="favorites.isFavorite(mediaId)"
                   :title="
                     favorites.isFavorite(mediaId) ? 'Remove from favorites' : 'Add to favorites'
                   "
@@ -386,23 +461,41 @@ function onTouchEnd(e: TouchEvent) {
                       "
                     />
                   </span>
+                  <span>{{ favorites.isFavorite(mediaId) ? 'Favorited' : 'Favorite' }}</span>
                 </button>
-                <button
+
+                <!-- Less-used / destructive admin actions live behind an overflow
+                     menu so they're not one stray click away. -->
+                <div
                   v-if="authenticated"
-                  class="button is-cyan"
-                  title="Fetch tags from Danbooru"
-                  @click="openDanbooruModal"
+                  class="dropdown is-right"
+                  :class="{ 'is-active': menuOpen }"
                 >
-                  <span class="icon"><i class="fa-solid fa-download" /></span>
-                </button>
-                <button
-                  v-if="authenticated"
-                  class="button is-danger is-outlined"
-                  title="Delete this media"
-                  @click="showDeleteModal = true"
-                >
-                  <span class="icon"><i class="fa-solid fa-trash" /></span>
-                </button>
+                  <div class="dropdown-trigger">
+                    <button
+                      class="button is-indigo"
+                      aria-haspopup="true"
+                      aria-controls="media-actions-menu"
+                      title="More actions"
+                      @click.stop="menuOpen = !menuOpen"
+                    >
+                      <span class="icon"><i class="fa-solid fa-ellipsis-vertical" /></span>
+                    </button>
+                  </div>
+                  <div id="media-actions-menu" class="dropdown-menu" role="menu">
+                    <div class="dropdown-content">
+                      <a class="dropdown-item" @click="onFetchTagsClick">
+                        <span class="icon"><i class="fa-solid fa-cloud-arrow-down" /></span>
+                        <span>Fetch Tags</span>
+                      </a>
+                      <hr class="dropdown-divider" />
+                      <a class="dropdown-item has-text-danger" @click="onDeleteClick">
+                        <span class="icon"><i class="fa-solid fa-trash" /></span>
+                        <span>Delete Media</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -429,7 +522,17 @@ function onTouchEnd(e: TouchEvent) {
                 <tr>
                   <th>MD5 Hash</th>
                   <td>
-                    <code>{{ mediaItem?.hash }}</code>
+                    <span class="hash-cell">
+                      <code>{{ mediaItem?.hash }}</code>
+                      <button
+                        class="button is-indigo is-small hash-copy"
+                        title="Copy MD5 hash"
+                        aria-label="Copy MD5 hash"
+                        @click="copyHash"
+                      >
+                        <span class="icon is-small"><i class="fa-regular fa-copy" /></span>
+                      </button>
+                    </span>
                   </td>
                 </tr>
                 <tr>
@@ -480,17 +583,20 @@ function onTouchEnd(e: TouchEvent) {
 
             <!-- Current Tags -->
             <h3 class="title is-6">Current Tags</h3>
-            <div class="tags are-medium">
-              <TagBadge
-                v-for="tag in tags"
-                :key="tag.tag_id"
-                :tag-id="tag.tag_id"
-                :tag-name="tag.tag_name"
-                :category-id="tag.category_id"
-                :removable="authenticated"
-                @remove="onRemoveTag"
-              />
-              <span v-if="tags.length === 0" class="has-text-grey">No tags applied yet.</span>
+            <div v-if="tags.length === 0" class="has-text-grey">No tags applied yet.</div>
+            <div v-for="group in groupedTags" v-else :key="group.name" class="tag-group">
+              <h4 class="tag-group-label">{{ group.name }}</h4>
+              <div class="tags are-medium">
+                <TagBadge
+                  v-for="tag in group.tags"
+                  :key="tag.tag_id"
+                  :tag-id="tag.tag_id"
+                  :tag-name="tag.tag_name"
+                  :category-id="tag.category_id"
+                  :removable="authenticated"
+                  @remove="onRemoveTag"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -614,7 +720,7 @@ function onTouchEnd(e: TouchEvent) {
                 :disabled="danbooruFetching"
                 @click="fetchDanbooruTags"
               >
-                <span class="icon"><i class="fa-solid fa-download" /></span>
+                <span class="icon"><i class="fa-solid fa-cloud-arrow-down" /></span>
                 <span>Fetch Tags</span>
               </button>
               <button
@@ -672,6 +778,65 @@ function onTouchEnd(e: TouchEvent) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* ── Overflow menu ────────────────────────────────────────────
+   Single flat surface matching the app's modal panels (#262a36),
+   so the items and the panel read as one consistent background. */
+
+.toolbar-actions .dropdown-content {
+  padding: 0;
+  overflow: hidden;
+  background-color: #262a36;
+  border: 1px solid #363b4e;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.toolbar-actions .dropdown-item {
+  background-color: transparent;
+  color: #e8eaed;
+}
+
+/* Only the background shifts on hover; the danger item keeps its red text. */
+.toolbar-actions .dropdown-item:hover {
+  background-color: #2e3346;
+}
+
+.toolbar-actions .dropdown-divider {
+  margin: 0;
+  background-color: #363b4e;
+}
+
+/* ── MD5 hash cell ────────────────────────────────────────── */
+
+.hash-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hash-copy {
+  vertical-align: middle;
+}
+
+/* ── Current-tags category groups ─────────────────────────── */
+
+.tag-group + .tag-group {
+  margin-top: 0.75rem;
+}
+
+.tag-group-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b5b5b5;
+  margin-bottom: 0.35rem;
+}
+
+.tag-group .tags {
+  margin-bottom: 0;
 }
 
 /* On narrow screens, let the toolbar stack but keep groups intact */

@@ -5,6 +5,48 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-07-03
+
+A redesign of the media detail / tag-management page, plus favorite-state and
+overflow-menu polish. Frontend only — no API changes (the HTTP contract remains
+at `3.0.0`).
+
+### Added
+
+- **Clickable tags** on the media page — each tag links to that tag's filtered
+  gallery listing.
+- **Category-grouped tags** — the "Current Tags" list is split into labeled
+  sections (Artist / Source / General / Meta …), ordered by category sort order
+  and alphabetized within each group, so a long tag list is easier to scan.
+- **Copy button** for the MD5 hash.
+- **Undo** action support in toast notifications, used when removing a tag.
+
+### Changed
+
+- The media detail page uses a wider content container (up to 1500px) so the
+  image and details panel fill large displays instead of stranding empty side
+  margins; unchanged on smaller screens.
+- Toolbar buttons are solid/purposeful throughout (no outlined "ghost" styles),
+  and the less-used, more-destructive **Fetch Tags** and **Delete** actions are
+  collapsed into an overflow (⋯) menu; Fetch Tags uses a clearer cloud-download
+  icon.
+- Removing a tag no longer interrupts with a blocking `confirm()` dialog — it
+  removes immediately and offers an **Undo** toast — and the remove (×) target on
+  each tag is larger for easier tapping.
+- The **Favorite** button now shows an explicit state: a neutral button with an
+  outline heart ("Favorite") when unset, and a solid pink button with a filled
+  heart ("Favorited") once favorited.
+- The add-tags search field has a lighter surface and a visible border so it
+  reads as an input rather than blending into the page background.
+- Infinite-scroll and items-per-page controls are hidden from the navbar on the
+  single-item detail view, where they have no effect (blur toggle stays).
+- The media image carries descriptive `alt` text instead of an empty attribute.
+
+### Fixed
+
+- The admin overflow menu rendered as two mismatched background shades; its panel
+  and items now share one consistent surface matching the app's modal styling.
+
 ## [3.1.0] - 2026-07-03
 
 Frontend UX and accessibility improvements to the media gallery. No API changes
@@ -244,6 +286,8 @@ from the git history, not a formal release.
   with a dedicated tag page, sorting by tag name, a sticky footer with copyright/
   disclaimer, and a **cron** ingest script for importing media (including videos).
 
+[3.2.0]: https://github.com/jwill89/simple-image-gallery/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/jwill89/simple-image-gallery/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/jwill89/simple-image-gallery/compare/v2.0.2...v3.0.0
 [2.0.2]: https://github.com/jwill89/simple-image-gallery/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/jwill89/simple-image-gallery/compare/v2.0.0...v2.0.1
