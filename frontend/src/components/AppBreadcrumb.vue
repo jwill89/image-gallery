@@ -56,6 +56,10 @@ const crumbs = computed<Crumb[]>(() => {
       to: { name: 'media', params: { page: 1, perPage: 40 } },
     })
     list.push({ label: `Media #${String(route.params.id)}`, icon: 'fa-solid fa-circle-info' })
+  } else if (name === 'media-random') {
+    // Reached via Random — reflect that provenance instead of the media grid.
+    list.push({ label: 'Random', icon: 'fa-solid fa-shuffle' })
+    list.push({ label: `Media #${String(route.params.id)}`, icon: 'fa-solid fa-circle-info' })
   } else if (name === 'tags') {
     list.push({ label: 'Tags', icon: 'fa-solid fa-tags' })
   } else if (name === 'tag-categories') {

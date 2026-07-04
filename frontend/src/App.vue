@@ -39,7 +39,9 @@ onUnmounted(() => {
     <ErrorBoundary>
       <router-view v-slot="{ Component }">
         <Transition name="page-fade" mode="out-in">
-          <component :is="Component" />
+          <KeepAlive :include="['GalleryView']">
+            <component :is="Component" />
+          </KeepAlive>
         </Transition>
       </router-view>
     </ErrorBoundary>

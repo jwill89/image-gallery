@@ -3,7 +3,7 @@
     "description": "A self-hosted personal media gallery for images, GIFs, and videos with Danbooru-style tagging.",
     "type": "project",
     "license": "MIT",
-    "version": "3.2.0",
+    "version": "3.3.0",
     "config": {
         "optimize-autoloader": true,
         "preferred-install": "dist",

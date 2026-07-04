@@ -1,4 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteLocationNormalized } from 'vue-router'
+import { useGalleryStore } from '../stores/gallery'
+
+const isMediaGrid = (r: RouteLocationNormalized) =>
+  r.name === 'media' || r.name === 'media-with-tags'
 
 const router = createRouter({
   history: createWebHistory('/'),
@@ -39,6 +44,18 @@ const router = createRouter({
       name: 'media-tags',
       component: () => import('../views/MediaTagsView.vue'),
       meta: { title: 'Media Tags' },
+      props: (route) => ({
+        mediaId: Number(route.params.id),
+      }),
+    },
+    {
+      // Same detail view, but reached via Random — the `/random/` path segment
+      // (rather than a query string) records that provenance for the navbar and
+      // breadcrumb.
+      path: '/random/media/:id/tags',
+      name: 'media-random',
+      component: () => import('../views/MediaTagsView.vue'),
+      meta: { title: 'Random Media' },
       props: (route) => ({
         mediaId: Number(route.params.id),
       }),
@@ -101,7 +118,13 @@ const router = createRouter({
       component: () => import('../views/NotFoundView.vue'),
     },
   ],
-  scrollBehavior() {
+  scrollBehavior(to, _from, savedPosition) {
+    // The infinite-scroll gallery manages its own scroll: it syncs the URL to
+    // the position while scrolling and restores the position manually on return
+    // (its DOM is kept alive). So never auto-scroll when landing on it.
+    if (isMediaGrid(to) && useGalleryStore().infiniteScroll) return false
+    // Everywhere else: restore on back/forward, otherwise go to the top.
+    if (savedPosition) return savedPosition
     return { top: 0, behavior: 'smooth' }
   },
 })

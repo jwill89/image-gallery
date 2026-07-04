@@ -21,6 +21,12 @@
   --gallery-rose: #fb7185;
   --gallery-amber: #fbbf24;
   --gallery-emerald: #34d399;
+  --gallery-blue: #60a5fa;
+  --gallery-green: #4ade80;
+  --gallery-yellow: #facc15;
+  --gallery-sky: #38bdf8;
+  --gallery-fuchsia: #e879f9;
+  --gallery-slate: #94a3b8;
 
   /* Dark text for light tag backgrounds */
   --gallery-tag-dark-text: #0f172a;
@@ -68,6 +74,30 @@
   background-color: var(--gallery-emerald);
   color: var(--gallery-tag-dark-text);
 }
+.tag.is-blue {
+  background-color: var(--gallery-blue);
+  color: var(--gallery-tag-dark-text);
+}
+.tag.is-green {
+  background-color: var(--gallery-green);
+  color: var(--gallery-tag-dark-text);
+}
+.tag.is-yellow {
+  background-color: var(--gallery-yellow);
+  color: var(--gallery-tag-dark-text);
+}
+.tag.is-sky {
+  background-color: var(--gallery-sky);
+  color: var(--gallery-tag-dark-text);
+}
+.tag.is-fuchsia {
+  background-color: var(--gallery-fuchsia);
+  color: var(--gallery-tag-dark-text);
+}
+.tag.is-slate {
+  background-color: var(--gallery-slate);
+  color: var(--gallery-tag-dark-text);
+}
 
 /* Delete button inside extended-color tags */
 .tag.is-teal .delete::before,
@@ -90,6 +120,20 @@
 .tag.is-amber .delete::after,
 .tag.is-emerald .delete::before,
 .tag.is-emerald .delete::after {
+  background-color: var(--gallery-tag-dark-text);
+}
+.tag.is-blue .delete::before,
+.tag.is-blue .delete::after,
+.tag.is-green .delete::before,
+.tag.is-green .delete::after,
+.tag.is-yellow .delete::before,
+.tag.is-yellow .delete::after,
+.tag.is-sky .delete::before,
+.tag.is-sky .delete::after,
+.tag.is-fuchsia .delete::before,
+.tag.is-fuchsia .delete::after,
+.tag.is-slate .delete::before,
+.tag.is-slate .delete::after {
   background-color: var(--gallery-tag-dark-text);
 }
 
@@ -124,6 +168,24 @@
 }
 .has-text-emerald {
   color: var(--gallery-emerald) !important;
+}
+.has-text-blue {
+  color: var(--gallery-blue) !important;
+}
+.has-text-green {
+  color: var(--gallery-green) !important;
+}
+.has-text-yellow {
+  color: var(--gallery-yellow) !important;
+}
+.has-text-sky {
+  color: var(--gallery-sky) !important;
+}
+.has-text-fuchsia {
+  color: var(--gallery-fuchsia) !important;
+}
+.has-text-slate {
+  color: var(--gallery-slate) !important;
 }
 
 /* ── Button color classes ──────────────────────────────── */

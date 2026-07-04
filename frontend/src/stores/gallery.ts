@@ -22,6 +22,13 @@ export const useGalleryStore = defineStore('gallery', () => {
   const error = ref<string | null>(null)
   const initialized = ref(false)
   const lastViewedItemIds = ref<number[]>([])
+  // Bumped when the user explicitly asks for a fresh gallery (e.g. the Media
+  // nav), so the kept-alive infinite-scroll view resets to the top instead of
+  // restoring its previous scroll position.
+  const galleryResetSeq = ref(0)
+  function resetGallery() {
+    galleryResetSeq.value++
+  }
 
   // Persist blur preference
   watch(blurThumbnails, (val) => {
@@ -97,11 +104,13 @@ export const useGalleryStore = defineStore('gallery', () => {
     loading,
     error,
     lastViewedItemIds,
+    galleryResetSeq,
     tagNames,
     initialize,
     refreshTags,
     refreshTotals,
     toggleBlur,
     toggleInfiniteScroll,
+    resetGallery,
   }
 })

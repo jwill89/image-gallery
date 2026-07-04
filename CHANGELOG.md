@@ -5,6 +5,84 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-07-03
+
+Infinite-scroll continuity — the gallery now remembers where you are. Frontend
+only — no API changes (the HTTP contract remains at `3.0.0`).
+
+### Added
+
+- **Infinite scroll reflects your position in the URL** — as you scroll, the
+  address updates to the page whose items are at the top of the viewport, so the
+  URL stays honest instead of stuck at `/media/1/40` and the spot is shareable.
+- **Turning infinite scroll off resumes where you were** — it loads the page you
+  were viewing in paged mode instead of jumping back to page 1.
+- **Turning infinite scroll on resumes from the page you were viewing** rather
+  than restarting at the top — and the list loads in both directions, so you can
+  scroll up to earlier pages or down to later ones from wherever you started.
+- **Returning from a media item restores your place** — the gallery view is kept
+  alive, so pressing Back from a detail page returns you to the same accumulated
+  items and scroll position rather than the top.
+
+## [3.2.2] - 2026-07-03
+
+Random-media provenance and a thumbnail-blur fix. Frontend only — no API changes
+(the HTTP contract remains at `3.0.0`).
+
+### Added
+
+- **Random-media provenance** — viewing an item via the Random action now uses a
+  clean `/random/media/:id/tags` route (no query string), highlights **Random**
+  in the navbar, and shows a **Gallery → Random → Media #ID** breadcrumb.
+- A **New Random Media** button replaces Back on random-accessed media pages,
+  rolling straight to another random item.
+
+### Fixed
+
+- Gallery thumbnail **blur no longer cuts off at the tile edges** — blurred
+  thumbnails are scaled inside a clipped container so the blur fills each tile
+  edge-to-edge with clean rounded corners instead of a faded rectangular border.
+
+## [3.2.1] - 2026-07-03
+
+A consistency and accessibility pass across the tag-management section (Tags,
+Categories, and Danbooru Import Rules), bringing it in line with the media page.
+Frontend only — no API changes (the HTTP contract remains at `3.0.0`).
+
+### Added
+
+- **Six new category colors** — `blue`, `green`, `yellow`, `sky`, `fuchsia`, and
+  `slate` — expanding the palette beyond Bulma's semantic set
+  (`danger`/`warning`/`success`/`info`/`white`).
+- **Keyboard-operable sortable headers** on the Tags list — the sort controls are
+  now real buttons with `aria-sort` state, reachable without a mouse.
+
+### Changed
+
+- The whole tag section (Tags, Categories, Import Rules) now uses the wider
+  content container (up to 1500px), matching the media and gallery pages, and
+  every table scrolls horizontally within its own container on small screens
+  instead of breaking the layout.
+- On the Tags list, tag names render as category-colored **pills** (as they do on
+  the media page) and the category shows as bold text; the default sort is now by
+  **media count (most-used first)** instead of symbols-first alphabetical.
+- Standardized the button accent palette across the section and **removed all
+  outlined "ghost" button styles**, including the navbar login/logout buttons.
+- Cross-links (media counts, etc.) are proper router links — keyboard-focusable
+  and open-in-new-tab — and icon-only action buttons gained `aria-label`s.
+- Removed the redundant **Color column** from the Tag Categories table (the
+  category-name pill already conveys the color).
+- The blur, infinite-scroll, and items-per-page navbar controls are hidden on
+  pages with no browsable media grid — the tag-management section (whose tables
+  paginate themselves) and the admin Upload and Duplicates pages.
+- Action columns are right-aligned in every tag-section table so the row
+  controls sit flush at the table's end.
+
+### Fixed
+
+- Danbooru Import Rules deletions now use confirmation **modals** instead of the
+  browser's native `confirm()` dialog, matching the rest of the app.
+
 ## [3.2.0] - 2026-07-03
 
 A redesign of the media detail / tag-management page, plus favorite-state and
@@ -286,6 +364,9 @@ from the git history, not a formal release.
   with a dedicated tag page, sorting by tag name, a sticky footer with copyright/
   disclaimer, and a **cron** ingest script for importing media (including videos).
 
+[3.3.0]: https://github.com/jwill89/simple-image-gallery/compare/v3.2.2...v3.3.0
+[3.2.2]: https://github.com/jwill89/simple-image-gallery/compare/v3.2.1...v3.2.2
+[3.2.1]: https://github.com/jwill89/simple-image-gallery/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/jwill89/simple-image-gallery/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/jwill89/simple-image-gallery/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/jwill89/simple-image-gallery/compare/v2.0.2...v3.0.0

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { useApi, getErrorMessage, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
@@ -12,15 +11,16 @@ import LoadingSpinner from '../components/LoadingSpinner.vue'
 const api = useApi()
 const store = useGalleryStore()
 const toastStore = useToastStore()
-const router = useRouter()
 
 const authenticated = ref(hasAuthToken())
 
 const allDisplayTags = ref<TagListItem[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
-const sortKey = ref<'tag_name' | 'category_name' | 'media_count'>('tag_name')
-const sortAsc = ref(true)
+// Default to most-used first — more useful on a management view than the
+// symbols-first alphabetical order.
+const sortKey = ref<'tag_name' | 'category_name' | 'media_count'>('media_count')
+const sortAsc = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(25)
 
@@ -122,6 +122,11 @@ function sortIcon(key: string) {
   return sortAsc.value ? 'fa-sort-up' : 'fa-sort-down'
 }
 
+function ariaSort(key: string): 'ascending' | 'descending' | 'none' {
+  if (sortKey.value !== key) return 'none'
+  return sortAsc.value ? 'ascending' : 'descending'
+}
+
 const loadFailed = ref(false)
 
 async function loadTags(showSpinner = true) {
@@ -211,13 +216,6 @@ async function submitForm() {
     formHelp.value = 'Error saving tag.'
     formHelpClass.value = 'is-danger'
   }
-}
-
-function searchByTag(tagName: string) {
-  void router.push({
-    name: 'media-with-tags',
-    params: { page: 1, perPage: 40, tags: tagName },
-  })
 }
 
 function onTagNameInput() {
@@ -343,7 +341,7 @@ onMounted(() => {
 
 <template>
   <section class="section">
-    <div class="container">
+    <div class="container is-wide">
       <LoadingSpinner v-if="loading" />
       <div v-else-if="loadFailed" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
@@ -370,11 +368,11 @@ onMounted(() => {
                   <span class="icon"><i class="fa-solid fa-plus" /></span>
                   <span>New Tag</span>
                 </button>
-                <router-link class="button is-purple is-outlined" :to="{ name: 'tag-categories' }">
+                <router-link class="button is-indigo" :to="{ name: 'tag-categories' }">
                   <span class="icon"><i class="fa-solid fa-palette" /></span>
                   <span>Categories</span>
                 </router-link>
-                <router-link class="button is-cyan is-outlined" :to="{ name: 'danbooru-rules' }">
+                <router-link class="button is-indigo" :to="{ name: 'danbooru-rules' }">
                   <span class="icon"><i class="fa-solid fa-file-import" /></span>
                   <span>Import Rules</span>
                 </router-link>
@@ -401,87 +399,103 @@ onMounted(() => {
         </div>
 
         <!-- Tag Table -->
-        <table class="table is-striped is-hoverable is-fullwidth">
-          <thead>
-            <tr>
-              <th style="cursor: pointer" @click="toggleSort('tag_name')">
-                Tag <i class="fas" :class="sortIcon('tag_name')" />
-              </th>
-              <th style="cursor: pointer" @click="toggleSort('category_name')">
-                Category <i class="fas" :class="sortIcon('category_name')" />
-              </th>
-              <th style="cursor: pointer" @click="toggleSort('media_count')">
-                Media <i class="fas" :class="sortIcon('media_count')" />
-              </th>
-              <th>Implies</th>
-              <th v-if="authenticated">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="tag in pagedTags" :key="tag.tag_id">
-              <td>
-                <span :class="getTextClassByName(tag.category_name)">
-                  {{ tag.tag_name }}
-                </span>
-              </td>
-              <td>
-                <span class="tag is-medium" :class="getCategoryClassByName(tag.category_name)">
-                  {{ tag.category_name }}
-                </span>
-              </td>
-              <td>
-                <a
-                  v-if="tag.media_count > 0"
-                  class="has-text-link"
-                  @click="searchByTag(tag.tag_name)"
-                >
-                  {{ tag.media_count }}
-                </a>
-                <span v-else>0</span>
-              </td>
-              <td>
-                <router-link
-                  v-if="tag.implication_count > 0"
-                  :to="{ name: 'tag-implications', params: { tagId: tag.tag_id } }"
-                  class="has-text-link"
-                >
-                  {{ tag.implication_count }}
-                </router-link>
-                <router-link
-                  v-else
-                  :to="{ name: 'tag-implications', params: { tagId: tag.tag_id } }"
-                  class="has-text-grey-light"
-                >
-                  0
-                </router-link>
-              </td>
-              <td v-if="authenticated">
-                <div class="buttons are-small">
-                  <button class="button is-cyan is-outlined" title="Edit" @click="editTag(tag)">
-                    <span class="icon"><i class="fa-solid fa-pen" /></span>
+        <div class="table-container">
+          <table class="table is-striped is-hoverable is-fullwidth">
+            <thead>
+              <tr>
+                <th :aria-sort="ariaSort('tag_name')">
+                  <button class="sort-header" @click="toggleSort('tag_name')">
+                    Tag <i class="fas" :class="sortIcon('tag_name')" />
                   </button>
-                  <button
-                    class="button is-amber is-outlined"
-                    title="Migrate"
-                    @click="openMigrateModal(tag)"
+                </th>
+                <th :aria-sort="ariaSort('category_name')">
+                  <button class="sort-header" @click="toggleSort('category_name')">
+                    Category <i class="fas" :class="sortIcon('category_name')" />
+                  </button>
+                </th>
+                <th :aria-sort="ariaSort('media_count')">
+                  <button class="sort-header" @click="toggleSort('media_count')">
+                    Media <i class="fas" :class="sortIcon('media_count')" />
+                  </button>
+                </th>
+                <th>Implies</th>
+                <th v-if="authenticated" class="has-text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="tag in pagedTags" :key="tag.tag_id">
+                <td>
+                  <span class="tag is-medium" :class="getCategoryClassByName(tag.category_name)">
+                    {{ tag.tag_name }}
+                  </span>
+                </td>
+                <td>
+                  <span class="has-text-weight-semibold">{{ tag.category_name }}</span>
+                </td>
+                <td>
+                  <router-link
+                    v-if="tag.media_count > 0"
+                    class="has-text-link"
+                    :to="{
+                      name: 'media-with-tags',
+                      params: { page: 1, perPage: 40, tags: tag.tag_name },
+                    }"
                   >
-                    <span class="icon"><i class="fa-solid fa-arrow-right-arrow-left" /></span>
-                  </button>
-                  <button
-                    class="button is-danger is-outlined"
-                    title="Delete"
-                    @click="openDeleteModal(tag)"
+                    {{ tag.media_count }}
+                  </router-link>
+                  <span v-else>0</span>
+                </td>
+                <td>
+                  <router-link
+                    v-if="tag.implication_count > 0"
+                    :to="{ name: 'tag-implications', params: { tagId: tag.tag_id } }"
+                    class="has-text-link"
                   >
-                    <span class="icon"><i class="fa-solid fa-trash" /></span>
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="pagedTags.length === 0">
-              <td :colspan="authenticated ? 5 : 4" class="has-text-centered">No tags found.</td>
-            </tr>
-          </tbody>
-        </table>
+                    {{ tag.implication_count }}
+                  </router-link>
+                  <router-link
+                    v-else
+                    :to="{ name: 'tag-implications', params: { tagId: tag.tag_id } }"
+                    class="has-text-grey-light"
+                  >
+                    0
+                  </router-link>
+                </td>
+                <td v-if="authenticated" class="has-text-right">
+                  <div class="buttons are-small is-right">
+                    <button
+                      class="button is-indigo"
+                      title="Edit"
+                      aria-label="Edit tag"
+                      @click="editTag(tag)"
+                    >
+                      <span class="icon"><i class="fa-solid fa-pen" /></span>
+                    </button>
+                    <button
+                      class="button is-amber"
+                      title="Migrate"
+                      aria-label="Migrate tag"
+                      @click="openMigrateModal(tag)"
+                    >
+                      <span class="icon"><i class="fa-solid fa-arrow-right-arrow-left" /></span>
+                    </button>
+                    <button
+                      class="button is-danger"
+                      title="Delete"
+                      aria-label="Delete tag"
+                      @click="openDeleteModal(tag)"
+                    >
+                      <span class="icon"><i class="fa-solid fa-trash" /></span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="pagedTags.length === 0">
+                <td :colspan="authenticated ? 5 : 4" class="has-text-centered">No tags found.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <!-- Pagination -->
         <nav v-if="totalFilteredPages > 1" class="pagination is-centered is-small">
@@ -702,6 +716,23 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* Sortable column headers as real buttons for keyboard operability. */
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.sort-header:hover {
+  color: #fff;
+}
+
 .dropdown-list {
   border: 1px solid #dbdbdb;
   border-radius: 4px;

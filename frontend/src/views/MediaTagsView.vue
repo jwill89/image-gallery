@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useMediaTags } from '../composables/useMediaTags'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { useApi, getErrorMessage, hasAuthToken } from '../composables/useApi'
 import { useFavoritesStore } from '../stores/favorites'
 import { endpoints } from '../api/endpoints'
-import type { DanbooruFetchResult, Tag } from '../types'
+import type { DanbooruFetchResult, Media, Tag } from '../types'
 import TagMultiSelect from '../components/TagMultiSelect.vue'
 import TagBadge from '../components/TagBadge.vue'
 import TagShortcodeModal from '../components/TagShortcodeModal.vue'
@@ -18,6 +18,7 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const route = useRoute()
 const store = useGalleryStore()
 const toastStore = useToastStore()
 const api = useApi()
@@ -148,8 +149,30 @@ async function load() {
   }
 }
 
+// This page was reached via the Random action when served under the
+// `/random/media/...` route; in that mode we offer a "New Random Media" jump
+// instead of a Back button.
+const isRandomView = computed(() => route.name === 'media-random')
+
 function backToGallery() {
   router.back()
+}
+
+async function newRandom() {
+  try {
+    if (store.totalMedia === 0) {
+      toastStore.info('The gallery is empty. Upload some media first.', 4000, 'No Media')
+      return
+    }
+    const item = await api.get<Media>(endpoints.media.random)
+    if (!item) return
+    // Clear gallery context (no prev/next for random access) and stay under the
+    // `/random/media/...` route so the navbar/breadcrumb keep showing Random.
+    store.lastViewedItemIds = []
+    void router.replace({ name: 'media-random', params: { id: item.media_id } })
+  } catch {
+    toastStore.error('Could not load a random media item. Please try again.', 6000, 'Random Failed')
+  }
 }
 
 async function onAddTags() {
@@ -417,7 +440,11 @@ function onTouchEnd(e: TouchEvent) {
             <!-- Toolbar: navigation on the left, actions on the right -->
             <div class="media-toolbar">
               <div class="toolbar-nav">
-                <button class="button is-indigo" @click="backToGallery">
+                <button v-if="isRandomView" class="button is-indigo" @click="newRandom">
+                  <span class="icon"><i class="fa-solid fa-shuffle" /></span>
+                  <span>New Random Media</span>
+                </button>
+                <button v-else class="button is-indigo" @click="backToGallery">
                   <span class="icon"><i class="fa-solid fa-backward" /></span>
                   <span>Back</span>
                 </button>

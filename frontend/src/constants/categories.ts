@@ -39,6 +39,12 @@ export const VALID_COLORS = [
   'rose',
   'amber',
   'emerald',
+  'blue',
+  'green',
+  'yellow',
+  'sky',
+  'fuchsia',
+  'slate',
 ] as const
 
 export type ValidColor = (typeof VALID_COLORS)[number]

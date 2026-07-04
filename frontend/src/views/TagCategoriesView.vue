@@ -145,7 +145,7 @@ onMounted(loadCategories)
 
 <template>
   <section class="section">
-    <div class="container">
+    <div class="container is-wide">
       <LoadingSpinner v-if="loading" />
 
       <div v-else-if="loadFailed" class="has-text-centered py-6">
@@ -183,62 +183,60 @@ onMounted(loadCategories)
         </p>
 
         <!-- Categories Table -->
-        <table class="table is-striped is-hoverable is-fullwidth">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Order</th>
-              <th>Name</th>
-              <th>Shortcode</th>
-              <th>Color</th>
-              <th>Description</th>
-              <th v-if="authenticated">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="cat in categories" :key="cat.category_id">
-              <td>{{ cat.category_id }}</td>
-              <td>{{ cat.sort_order }}</td>
-              <td>
-                <span class="tag is-medium" :class="colorToTagClass(cat.color)">{{
-                  cat.category_name
-                }}</span>
-              </td>
-              <td>
-                <code>{{ cat.category_short }}:</code>
-              </td>
-              <td>
-                <span class="tag is-small" :class="colorToTagClass(cat.color)">{{
-                  cat.color
-                }}</span>
-              </td>
-              <td>{{ cat.description }}</td>
-              <td v-if="authenticated">
-                <div class="buttons are-small">
-                  <button
-                    class="button is-cyan is-outlined"
-                    title="Edit"
-                    @click="openEditModal(cat)"
-                  >
-                    <span class="icon"><i class="fa-solid fa-pen" /></span>
-                  </button>
-                  <button
-                    class="button is-danger is-outlined"
-                    title="Delete"
-                    @click="openDeleteConfirm(cat)"
-                  >
-                    <span class="icon"><i class="fa-solid fa-trash" /></span>
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="categories.length === 0">
-              <td :colspan="authenticated ? 7 : 6" class="has-text-centered has-text-grey">
-                No categories defined.
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-container">
+          <table class="table is-striped is-hoverable is-fullwidth">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Order</th>
+                <th>Name</th>
+                <th>Shortcode</th>
+                <th>Description</th>
+                <th v-if="authenticated" class="has-text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="cat in categories" :key="cat.category_id">
+                <td>{{ cat.category_id }}</td>
+                <td>{{ cat.sort_order }}</td>
+                <td>
+                  <span class="tag is-medium" :class="colorToTagClass(cat.color)">{{
+                    cat.category_name
+                  }}</span>
+                </td>
+                <td>
+                  <code>{{ cat.category_short }}:</code>
+                </td>
+                <td>{{ cat.description }}</td>
+                <td v-if="authenticated" class="has-text-right">
+                  <div class="buttons are-small is-right">
+                    <button
+                      class="button is-indigo"
+                      title="Edit"
+                      aria-label="Edit category"
+                      @click="openEditModal(cat)"
+                    >
+                      <span class="icon"><i class="fa-solid fa-pen" /></span>
+                    </button>
+                    <button
+                      class="button is-danger"
+                      title="Delete"
+                      aria-label="Delete category"
+                      @click="openDeleteConfirm(cat)"
+                    >
+                      <span class="icon"><i class="fa-solid fa-trash" /></span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="categories.length === 0">
+                <td :colspan="authenticated ? 6 : 5" class="has-text-centered has-text-grey">
+                  No categories defined.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
 
       <!-- New/Edit Category Modal -->

@@ -37,6 +37,15 @@ const tagHelp = ref('')
 const tagHelpClass = ref('')
 const tagLoading = ref(false)
 
+// ── Delete confirmation modals ─────────────────────────────
+const showDeleteCatModal = ref(false)
+const deleteCatTarget = ref<CategoryMapping | null>(null)
+const deleteCatLoading = ref(false)
+
+const showDeleteTagModal = ref(false)
+const deleteTagTarget = ref<TagMapping | null>(null)
+const deleteTagLoading = ref(false)
+
 async function loadCategoryMappings() {
   categoryMappings.value =
     (await api.get<CategoryMapping[]>(endpoints.danbooru.categoryMappings)) ?? []
@@ -106,14 +115,23 @@ async function submitCatMapping() {
   }
 }
 
-async function deleteCatMapping(danbooruCategoryId: number) {
-  if (!confirm('Remove this category mapping?')) return
+function openDeleteCatModal(m: CategoryMapping) {
+  deleteCatTarget.value = m
+  showDeleteCatModal.value = true
+}
+
+async function confirmDeleteCat() {
+  if (!deleteCatTarget.value) return
+  deleteCatLoading.value = true
   try {
-    await api.del(endpoints.danbooru.categoryMapping(danbooruCategoryId))
+    await api.del(endpoints.danbooru.categoryMapping(deleteCatTarget.value.danbooru_category_id))
     await loadCategoryMappings()
+    showDeleteCatModal.value = false
     toastStore.success('Category mapping removed.')
   } catch (e) {
     toastStore.error(getErrorMessage(e, 'Could not remove mapping.'))
+  } finally {
+    deleteCatLoading.value = false
   }
 }
 
@@ -175,14 +193,23 @@ async function submitTagMapping() {
   }
 }
 
-async function deleteTagMapping(id: number) {
-  if (!confirm('Remove this tag name mapping?')) return
+function openDeleteTagModal(m: TagMapping) {
+  deleteTagTarget.value = m
+  showDeleteTagModal.value = true
+}
+
+async function confirmDeleteTag() {
+  if (!deleteTagTarget.value) return
+  deleteTagLoading.value = true
   try {
-    await api.del(endpoints.danbooru.tagMapping(id))
+    await api.del(endpoints.danbooru.tagMapping(deleteTagTarget.value.id))
     await loadTagMappings()
+    showDeleteTagModal.value = false
     toastStore.success('Tag mapping removed.')
   } catch (e) {
     toastStore.error(getErrorMessage(e, 'Could not remove mapping.'))
+  } finally {
+    deleteTagLoading.value = false
   }
 }
 
@@ -191,7 +218,7 @@ onMounted(loadRules)
 
 <template>
   <section class="section">
-    <div class="container">
+    <div class="container is-wide">
       <LoadingSpinner v-if="loading" />
 
       <div v-else-if="loadFailed" class="has-text-centered py-6">
@@ -238,57 +265,62 @@ onMounted(loadRules)
           </div>
         </div>
 
-        <table class="table is-striped is-hoverable is-fullwidth mb-6">
-          <thead>
-            <tr>
-              <th>Danbooru ID</th>
-              <th>Danbooru Category</th>
-              <th />
-              <th>Gallery Category</th>
-              <th v-if="authenticated" style="width: 80px">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in categoryMappings" :key="m.danbooru_category_id">
-              <td>
-                <code>{{ m.danbooru_category_id }}</code>
-              </td>
-              <td>{{ m.danbooru_category_name }}</td>
-              <td class="has-text-centered has-text-grey">
-                <i class="fa-solid fa-arrow-right" />
-              </td>
-              <td>
-                <span
-                  v-if="m.gallery_category_name"
-                  class="tag is-medium"
-                  :class="
-                    colorToTagClass(
-                      store.categories.find((c) => c.category_id === m.gallery_category_id)
-                        ?.color || 'white',
-                    )
-                  "
-                >
-                  {{ m.gallery_category_name }}
-                </span>
-                <span v-else class="has-text-danger">Missing (ID {{ m.gallery_category_id }})</span>
-              </td>
-              <td v-if="authenticated">
-                <button
-                  class="button is-small is-danger is-outlined"
-                  title="Remove"
-                  @click="deleteCatMapping(m.danbooru_category_id)"
-                >
-                  <span class="icon"><i class="fa-solid fa-trash" /></span>
-                </button>
-              </td>
-            </tr>
-            <tr v-if="categoryMappings.length === 0">
-              <td :colspan="authenticated ? 5 : 4" class="has-text-centered has-text-grey">
-                No category mappings configured. Danbooru imports will skip all tags.
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-container mb-6">
+          <table class="table is-striped is-hoverable is-fullwidth">
+            <thead>
+              <tr>
+                <th>Danbooru ID</th>
+                <th>Danbooru Category</th>
+                <th />
+                <th>Gallery Category</th>
+                <th v-if="authenticated" class="has-text-right" style="width: 80px">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in categoryMappings" :key="m.danbooru_category_id">
+                <td>
+                  <code>{{ m.danbooru_category_id }}</code>
+                </td>
+                <td>{{ m.danbooru_category_name }}</td>
+                <td class="has-text-centered has-text-grey">
+                  <i class="fa-solid fa-arrow-right" />
+                </td>
+                <td>
+                  <span
+                    v-if="m.gallery_category_name"
+                    class="tag is-medium"
+                    :class="
+                      colorToTagClass(
+                        store.categories.find((c) => c.category_id === m.gallery_category_id)
+                          ?.color || 'white',
+                      )
+                    "
+                  >
+                    {{ m.gallery_category_name }}
+                  </span>
+                  <span v-else class="has-text-danger"
+                    >Missing (ID {{ m.gallery_category_id }})</span
+                  >
+                </td>
+                <td v-if="authenticated" class="has-text-right">
+                  <button
+                    class="button is-small is-danger"
+                    title="Remove"
+                    aria-label="Remove category mapping"
+                    @click="openDeleteCatModal(m)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-trash" /></span>
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="categoryMappings.length === 0">
+                <td :colspan="authenticated ? 5 : 4" class="has-text-centered has-text-grey">
+                  No category mappings configured. Danbooru imports will skip all tags.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <hr />
 
@@ -308,51 +340,55 @@ onMounted(loadRules)
           </div>
         </div>
 
-        <table class="table is-striped is-hoverable is-fullwidth">
-          <thead>
-            <tr>
-              <th>Danbooru Tag</th>
-              <th />
-              <th>Gallery Tag</th>
-              <th v-if="authenticated" style="width: 120px">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in tagMappings" :key="m.id">
-              <td>
-                <code>{{ m.danbooru_tag }}</code>
-              </td>
-              <td class="has-text-centered has-text-grey">
-                <i class="fa-solid fa-arrow-right" />
-              </td>
-              <td>{{ m.gallery_tag }}</td>
-              <td v-if="authenticated">
-                <div class="buttons are-small">
-                  <button
-                    class="button is-cyan is-outlined"
-                    title="Edit"
-                    @click="openEditTagMapping(m)"
-                  >
-                    <span class="icon"><i class="fa-solid fa-pen" /></span>
-                  </button>
-                  <button
-                    class="button is-danger is-outlined"
-                    title="Remove"
-                    @click="deleteTagMapping(m.id)"
-                  >
-                    <span class="icon"><i class="fa-solid fa-trash" /></span>
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="tagMappings.length === 0">
-              <td :colspan="authenticated ? 4 : 3" class="has-text-centered has-text-grey">
-                No tag name mappings configured. Danbooru tags will be imported with underscores
-                replaced by spaces.
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-container">
+          <table class="table is-striped is-hoverable is-fullwidth">
+            <thead>
+              <tr>
+                <th>Danbooru Tag</th>
+                <th />
+                <th>Gallery Tag</th>
+                <th v-if="authenticated" class="has-text-right" style="width: 120px">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in tagMappings" :key="m.id">
+                <td>
+                  <code>{{ m.danbooru_tag }}</code>
+                </td>
+                <td class="has-text-centered has-text-grey">
+                  <i class="fa-solid fa-arrow-right" />
+                </td>
+                <td>{{ m.gallery_tag }}</td>
+                <td v-if="authenticated" class="has-text-right">
+                  <div class="buttons are-small is-right">
+                    <button
+                      class="button is-indigo"
+                      title="Edit"
+                      aria-label="Edit tag mapping"
+                      @click="openEditTagMapping(m)"
+                    >
+                      <span class="icon"><i class="fa-solid fa-pen" /></span>
+                    </button>
+                    <button
+                      class="button is-danger"
+                      title="Remove"
+                      aria-label="Remove tag mapping"
+                      @click="openDeleteTagModal(m)"
+                    >
+                      <span class="icon"><i class="fa-solid fa-trash" /></span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="tagMappings.length === 0">
+                <td :colspan="authenticated ? 4 : 3" class="has-text-centered has-text-grey">
+                  No tag name mappings configured. Danbooru tags will be imported with underscores
+                  replaced by spaces.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
 
       <!-- Add Category Mapping Modal -->
@@ -481,6 +517,68 @@ onMounted(loadRules)
                 {{ tagFormMode === 'edit' ? 'Save Changes' : 'Add Mapping' }}
               </button>
               <button class="button" @click="showTagModal = false">Cancel</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Delete Category Mapping Modal -->
+      <div class="modal" :class="{ 'is-active': showDeleteCatModal }">
+        <div class="modal-background" @click="showDeleteCatModal = false" />
+        <div class="modal-card">
+          <header class="modal-card-head">
+            <p class="modal-card-title"><strong>Remove Category Mapping</strong></p>
+            <button class="delete" aria-label="close" @click="showDeleteCatModal = false" />
+          </header>
+          <section class="modal-card-body">
+            <p>
+              Remove the mapping for Danbooru category
+              <strong>{{ deleteCatTarget?.danbooru_category_name }}</strong> (ID
+              {{ deleteCatTarget?.danbooru_category_id }})? Danbooru imports will no longer apply
+              this category.
+            </p>
+          </section>
+          <footer class="modal-card-foot">
+            <div class="buttons">
+              <button
+                class="button is-danger"
+                :class="{ 'is-loading': deleteCatLoading }"
+                @click="confirmDeleteCat"
+              >
+                Remove
+              </button>
+              <button class="button" @click="showDeleteCatModal = false">Cancel</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Delete Tag Name Mapping Modal -->
+      <div class="modal" :class="{ 'is-active': showDeleteTagModal }">
+        <div class="modal-background" @click="showDeleteTagModal = false" />
+        <div class="modal-card">
+          <header class="modal-card-head">
+            <p class="modal-card-title"><strong>Remove Tag Mapping</strong></p>
+            <button class="delete" aria-label="close" @click="showDeleteTagModal = false" />
+          </header>
+          <section class="modal-card-body">
+            <p>
+              Remove the mapping <strong>{{ deleteTagTarget?.danbooru_tag }}</strong> →
+              <strong>{{ deleteTagTarget?.gallery_tag }}</strong
+              >? Future imports of this Danbooru tag will fall back to the default
+              underscore-to-space conversion.
+            </p>
+          </section>
+          <footer class="modal-card-foot">
+            <div class="buttons">
+              <button
+                class="button is-danger"
+                :class="{ 'is-loading': deleteTagLoading }"
+                @click="confirmDeleteTag"
+              >
+                Remove
+              </button>
+              <button class="button" @click="showDeleteTagModal = false">Cancel</button>
             </div>
           </footer>
         </div>

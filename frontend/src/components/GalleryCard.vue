@@ -57,12 +57,14 @@ function onCardKey(e: KeyboardEvent) {
   >
     <div class="gallery-card-inner">
       <div class="gallery-card-thumb">
-        <img
-          :class="['gallery-card-img', { 'thumb-blur': store.blurThumbnails }]"
-          :src="thumbnailPath"
-          :srcset="`${thumbnail2xPath} 2x`"
-          :alt="altText"
-        />
+        <div class="gallery-card-img-wrap">
+          <img
+            :class="['gallery-card-img', { 'thumb-blur': store.blurThumbnails }]"
+            :src="thumbnailPath"
+            :srcset="`${thumbnail2xPath} 2x`"
+            :alt="altText"
+          />
+        </div>
         <!-- Animated badge (videos and GIFs) -->
         <span v-if="isAnimated" class="gallery-card-badge">
           <i :class="item.media_type === 'video' ? 'fa-solid fa-film' : 'fa-solid fa-play'" />
@@ -115,12 +117,32 @@ function onCardKey(e: KeyboardEvent) {
   line-height: 0;
 }
 
+/* Clips the blurred image so its faded edges are cropped instead of showing a
+   hard cut-off at the tile border. */
+.gallery-card-img-wrap {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  line-height: 0;
+}
+
 .gallery-card-img {
+  display: block;
   max-width: 100%;
   max-height: 200px;
   object-fit: contain;
   border-radius: 6px;
-  transition: filter 0.2s ease;
+  transition:
+    filter 0.2s ease,
+    transform 0.2s ease;
+}
+
+/* `filter: blur()` fades toward transparent at the image edge; scaling the image
+   up inside the clipped wrapper pushes those faded edges out of view so the blur
+   fills the tile edge-to-edge. */
+.gallery-card-img.thumb-blur {
+  transform: scale(1.15);
 }
 
 .gallery-card:hover .gallery-card-img:not(.thumb-blur) {

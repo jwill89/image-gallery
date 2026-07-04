@@ -21,6 +21,9 @@ const selectedTags = ref<string[]>([])
 const perPage = ref(40)
 const authenticated = ref(hasAuthToken())
 
+// A media detail page reached via Random lives under the `/random/media/...`
+// route (name `media-random`), so it counts as the Random destination.
+const isRandomActive = computed(() => route.name === 'media-random')
 const isMediaActive = computed(() => {
   const name = route.name as string
   return name === 'media' || name === 'media-with-tags' || name === 'media-tags'
@@ -36,14 +39,27 @@ const isTagsActive = computed(() => {
 })
 const isUploadActive = computed(() => route.name === 'upload')
 const isFavoritesActive = computed(() => route.name === 'favorites')
-// Infinite-scroll and items-per-page only affect gallery listings, so hide them
-// on the single-item detail view where they do nothing.
-const isDetailView = computed(() => route.name === 'media-tags')
+const isDetailView = computed(() => route.name === 'media-tags' || route.name === 'media-random')
+// Admin utility pages (Upload, Duplicates) render no browsable media grid.
+const isAdminUtilityPage = computed(() => route.name === 'upload' || route.name === 'duplicates')
+
+// Blur only affects media thumbnails, so hide the toggle where none are shown:
+// the tag-management section and the admin utility pages.
+const showBlurToggle = computed(() => !isTagsActive.value && !isAdminUtilityPage.value)
+// Infinite-scroll and items-per-page only affect gallery listings; hide them on
+// the single-item detail view, the self-paginating tag tables, and the admin
+// utility pages.
+const showListControls = computed(
+  () => !isDetailView.value && !isTagsActive.value && !isAdminUtilityPage.value,
+)
 const isDupesActive = computed(() => route.name === 'duplicates')
 const isLoginActive = computed(() => route.name === 'login')
 
 function navigateMedia() {
   selectedTags.value = []
+  // Force a fresh top-of-list load even if the kept-alive gallery is already
+  // mounted at a scrolled infinite-scroll position.
+  store.resetGallery()
   void router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
   burgerActive.value = false
 }
@@ -84,7 +100,7 @@ async function navigateRandom() {
 
     // Clear gallery context so arrow keys are disabled for random access
     store.lastViewedItemIds = []
-    void router.push({ name: 'media-tags', params: { id: item.media_id } })
+    void router.push({ name: 'media-random', params: { id: item.media_id } })
   } catch {
     toastStore.error('Could not load a random media item. Please try again.', 6000, 'Random Failed')
   }
@@ -195,7 +211,7 @@ router.afterEach((to) => {
         </a>
 
         <!-- Random -->
-        <a class="navbar-item" @click="navigateRandom">
+        <a class="navbar-item" :class="{ 'is-selected': isRandomActive }" @click="navigateRandom">
           <span class="icon"><i class="fa-solid fa-shuffle" /></span>
           <span>Random</span>
         </a>
@@ -233,7 +249,7 @@ router.afterEach((to) => {
       </div>
 
       <div class="navbar-end">
-        <div class="navbar-item">
+        <div v-if="showBlurToggle" class="navbar-item">
           <button
             class="button"
             :class="{ 'is-success': store.blurThumbnails }"
@@ -245,7 +261,7 @@ router.afterEach((to) => {
           </button>
         </div>
 
-        <div v-if="!isDetailView" class="navbar-item">
+        <div v-if="showListControls" class="navbar-item">
           <button
             class="button"
             :class="{ 'is-success': store.infiniteScroll }"
@@ -258,7 +274,7 @@ router.afterEach((to) => {
           </button>
         </div>
 
-        <div v-if="!isDetailView" class="navbar-item">
+        <div v-if="showListControls" class="navbar-item">
           <div class="field">
             <div class="control has-icons-left">
               <div class="select">
@@ -308,13 +324,13 @@ router.afterEach((to) => {
         </div>
 
         <div class="navbar-item">
-          <button v-if="authenticated" class="button is-danger is-outlined" @click="logout">
+          <button v-if="authenticated" class="button is-danger" @click="logout">
             <span class="icon"><i class="fa-solid fa-right-from-bracket" /></span>
             <span>Logout</span>
           </button>
           <button
             v-else
-            class="button is-primary is-outlined"
+            class="button is-primary"
             :class="{ 'is-selected': isLoginActive }"
             @click="navigateLogin"
           >
