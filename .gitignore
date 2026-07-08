@@ -4,8 +4,11 @@
 /.claude/
 /IMPROVEMENTS.md
 
-# Dev-only deploy script — holds the production host IP and the SSH key path. Never commit.
-/scripts/
+# Deploy tooling: track the script + config template (no secrets in them); keep
+# the local deploy.config.ps1 (host/user/key/webroot) out of git.
+/scripts/*
+!/scripts/deploy.ps1
+!/scripts/deploy.config.example.ps1
 
 # ── Backend (PHP) ─────────────────────────────────────────────────────────────
 # Dependencies are reinstalled via composer; composer.lock IS tracked (reproducible installs).

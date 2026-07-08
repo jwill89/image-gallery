@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Releases & tags.** Each version corresponds to a Git tag and GitHub Release
+named `v<version>` (e.g. `v3.3.0`), created **automatically** by the CI `release`
+job (`.github/workflows/ci.yml` → `.github/scripts/release.sh`): on a push to the
+default branch, after the full gate passes, if the current version
+(`frontend/package.json`) has no release yet it is tagged and released, with the
+release body taken from that version's section below. So bump the version and
+update its section here in the same commit and push a green commit — no manual
+tagging.
+
 ## [3.3.0] - 2026-07-03
 
 A broad frontend release: infinite-scroll continuity, a consistency and
