@@ -13,7 +13,6 @@ import { useGalleryStore, type TagCategory } from '../stores/gallery'
 const category = (over: Partial<TagCategory> = {}): TagCategory => ({
   category_id: 1,
   category_name: 'Character',
-  category_short: 'char',
   color: 'teal',
   description: '',
   sort_order: 0,
@@ -26,18 +25,30 @@ describe('categories helpers', () => {
     setActivePinia(createPinia())
   })
 
-  it('builds Bulma tag/text classes from a color', () => {
-    expect(colorToTagClass('teal')).toBe('is-teal')
-    expect(colorToTextClass('danger')).toBe('has-text-danger')
+  it('builds tag/text classes from a color', () => {
+    expect(colorToTagClass('teal')).toBe('tag--teal')
+    expect(colorToTextClass('rose')).toBe('tag-text--rose')
   })
 
-  it('falls back to white for empty colors', () => {
-    expect(colorToTagClass('')).toBe('is-white')
-    expect(colorToTextClass('')).toBe('has-text-white')
+  it('falls back to neutral for empty colors', () => {
+    expect(colorToTagClass('')).toBe('tag--neutral')
+    expect(colorToTextClass('')).toBe('tag-text--neutral')
   })
 
-  it('exposes the Bulma + extended palette in VALID_COLORS', () => {
-    expect(VALID_COLORS).toContain('primary')
+  it('falls back to neutral for colors outside the palette', () => {
+    expect(colorToTagClass(null)).toBe('tag--neutral')
+    expect(colorToTagClass(undefined)).toBe('tag--neutral')
+    // A stale row that still holds a pre-migration value must not emit a class
+    // that would collide with the semantic palette.
+    expect(colorToTagClass('danger')).toBe('tag--neutral')
+    expect(colorToTextClass('warning')).toBe('tag-text--neutral')
+  })
+
+  it('keeps the tag palette free of semantic state names', () => {
+    for (const state of ['primary', 'link', 'info', 'success', 'warning', 'danger']) {
+      expect(VALID_COLORS).not.toContain(state)
+    }
+    expect(VALID_COLORS).toContain('neutral')
     expect(VALID_COLORS).toContain('emerald')
   })
 
@@ -45,16 +56,16 @@ describe('categories helpers', () => {
     const store = useGalleryStore()
     store.categories = [category({ category_id: 1, category_name: 'Character', color: 'teal' })]
 
-    expect(getCategoryClassById(1)).toBe('is-teal')
-    expect(getCategoryClassByName('Character')).toBe('is-teal')
-    expect(getTextClassByName('Character')).toBe('has-text-teal')
+    expect(getCategoryClassById(1)).toBe('tag--teal')
+    expect(getCategoryClassByName('Character')).toBe('tag--teal')
+    expect(getTextClassByName('Character')).toBe('tag-text--teal')
   })
 
-  it('returns white defaults for unknown categories', () => {
+  it('returns neutral defaults for unknown categories', () => {
     useGalleryStore()
 
-    expect(getCategoryClassById(999)).toBe('is-white')
-    expect(getCategoryClassByName('Nope')).toBe('is-white')
-    expect(getTextClassByName('Nope')).toBe('has-text-white')
+    expect(getCategoryClassById(999)).toBe('tag--neutral')
+    expect(getCategoryClassByName('Nope')).toBe('tag--neutral')
+    expect(getTextClassByName('Nope')).toBe('tag-text--neutral')
   })
 })

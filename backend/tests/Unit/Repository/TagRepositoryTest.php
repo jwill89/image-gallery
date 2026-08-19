@@ -18,12 +18,12 @@ final class TagRepositoryTest extends DatabaseTestCase
 {
     private function makeRepository(PDO $db): TagRepository
     {
-        return new TagRepository($db, new TagCategoryRepository($db));
+        return new TagRepository($db);
     }
 
     private function makeCategory(PDO $db): int
     {
-        $db->exec("INSERT INTO tag_categories (category_name, category_short) VALUES ('General', 'gen')");
+        $db->exec("INSERT INTO tag_categories (category_name) VALUES ('General')");
         return (int) $db->lastInsertId();
     }
 

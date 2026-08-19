@@ -99,7 +99,7 @@ function onCardKey(e: KeyboardEvent) {
 }
 
 .gallery-card:focus-visible {
-  outline: 2px solid #818cf8;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -154,7 +154,7 @@ function onCardKey(e: KeyboardEvent) {
   top: 4px;
   left: 4px;
   background: rgba(0, 0, 0, 0.7);
-  color: #fff;
+  color: rgba(255, 255, 255, 0.92);
   font-size: 0.7rem;
   padding: 3px 6px;
   border-radius: 3px;
@@ -169,7 +169,7 @@ function onCardKey(e: KeyboardEvent) {
   right: 4px;
   background: rgba(0, 0, 0, 0.6);
   border: none;
-  color: #d1d5db; /* ≥4.5:1 on the dark chip (was #aaa ≈ 2.9:1) */
+  color: rgba(255, 255, 255, 0.85); /* ≥4.5:1 on the dark chip */
   font-size: 0.85rem;
   padding: 4px 6px;
   border-radius: 4px;
@@ -195,7 +195,7 @@ function onCardKey(e: KeyboardEvent) {
 
 .gallery-card-heart:focus-visible {
   opacity: 1;
-  outline: 2px solid #818cf8;
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -205,11 +205,11 @@ function onCardKey(e: KeyboardEvent) {
 }
 
 .gallery-card-heart.is-favorited {
-  color: #f14668;
+  color: var(--fav);
 }
 
 .gallery-card-heart:hover {
-  color: #f14668;
+  color: var(--fav);
   transform: scale(1.15);
 }
 

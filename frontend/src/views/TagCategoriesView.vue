@@ -7,6 +7,10 @@ import { endpoints } from '../api/endpoints'
 import type { TagCategory } from '../types'
 import { colorToTagClass, VALID_COLORS } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import EmptyState from '../components/EmptyState.vue'
+import PageHeader from '../components/PageHeader.vue'
+import AppDialog from '../components/AppDialog.vue'
+import AppTooltip from '../components/AppTooltip.vue'
 
 const api = useApi()
 const store = useGalleryStore()
@@ -22,7 +26,6 @@ const showModal = ref(false)
 const formMode = ref<'new' | 'edit'>('new')
 const formId = ref(0)
 const formName = ref('')
-const formShort = ref('')
 const formColor = ref('white')
 const formDescription = ref('')
 const formSortOrder = ref(0)
@@ -52,8 +55,7 @@ function openNewModal() {
   formMode.value = 'new'
   formId.value = 0
   formName.value = ''
-  formShort.value = ''
-  formColor.value = 'white'
+  formColor.value = 'neutral'
   formDescription.value = ''
   formSortOrder.value =
     categories.value.length > 0 ? Math.max(...categories.value.map((c) => c.sort_order)) + 1 : 0
@@ -66,7 +68,6 @@ function openEditModal(cat: TagCategory) {
   formMode.value = 'edit'
   formId.value = cat.category_id
   formName.value = cat.category_name
-  formShort.value = cat.category_short
   formColor.value = cat.color
   formDescription.value = cat.description
   formSortOrder.value = cat.sort_order
@@ -85,17 +86,11 @@ async function submitForm() {
     formHelpClass.value = 'is-danger'
     return
   }
-  if (!formShort.value.trim()) {
-    formHelp.value = 'Shortcode is required.'
-    formHelpClass.value = 'is-danger'
-    return
-  }
 
   formLoading.value = true
   try {
     const payload = {
       category_name: formName.value.trim(),
-      category_short: formShort.value.trim().toLowerCase(),
       color: formColor.value,
       description: formDescription.value.trim(),
       sort_order: formSortOrder.value,
@@ -148,38 +143,30 @@ onMounted(loadCategories)
     <div class="container is-wide">
       <LoadingSpinner v-if="loading" />
 
-      <div v-else-if="loadFailed" class="has-text-centered py-6">
-        <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-palette fa-3x" />
-        </span>
-        <p class="is-size-5 has-text-grey mt-4">Could not load categories.</p>
-        <button class="button is-indigo mt-4" @click="loadCategories">
+      <EmptyState
+        v-else-if="loadFailed"
+        icon="fa-solid fa-palette"
+        title="Could not load categories."
+      >
+        <button class="button" @click="loadCategories">
           <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
-      </div>
+      </EmptyState>
 
       <template v-else>
-        <!-- Header -->
-        <div class="level mb-4">
-          <div class="level-left">
-            <div class="level-item">
-              <h1 class="title is-4 mb-0">Tag Categories</h1>
-            </div>
-          </div>
-          <div v-if="authenticated" class="level-right">
-            <div class="level-item">
-              <button class="button is-primary" @click="openNewModal">
-                <span class="icon"><i class="fa-solid fa-plus" /></span>
-                <span>New Category</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <PageHeader title="Tag Categories">
+          <template v-if="authenticated" #actions>
+            <button class="button is-primary" @click="openNewModal">
+              <span class="icon"><i class="fa-solid fa-plus" /></span>
+              <span>New Category</span>
+            </button>
+          </template>
+        </PageHeader>
 
         <p class="mb-5 has-text-grey">
-          Manage the tag categories used throughout the gallery. Each category has a unique
-          shortcode (used when adding tags, e.g. <code>a:artist name</code>) and a display color.
+          Manage the tag categories used throughout the gallery. Each category has a display colour,
+          which is how tags are colour-coded everywhere they appear.
         </p>
 
         <!-- Categories Table -->
@@ -190,7 +177,6 @@ onMounted(loadCategories)
                 <th>ID</th>
                 <th>Order</th>
                 <th>Name</th>
-                <th>Shortcode</th>
                 <th>Description</th>
                 <th v-if="authenticated" class="has-text-right">Actions</th>
               </tr>
@@ -204,33 +190,28 @@ onMounted(loadCategories)
                     cat.category_name
                   }}</span>
                 </td>
-                <td>
-                  <code>{{ cat.category_short }}:</code>
-                </td>
                 <td>{{ cat.description }}</td>
                 <td v-if="authenticated" class="has-text-right">
                   <div class="buttons are-small is-right">
-                    <button
-                      class="button is-indigo"
-                      title="Edit"
-                      aria-label="Edit category"
-                      @click="openEditModal(cat)"
-                    >
-                      <span class="icon"><i class="fa-solid fa-pen" /></span>
-                    </button>
-                    <button
-                      class="button is-danger"
-                      title="Delete"
-                      aria-label="Delete category"
-                      @click="openDeleteConfirm(cat)"
-                    >
-                      <span class="icon"><i class="fa-solid fa-trash" /></span>
-                    </button>
+                    <AppTooltip label="Edit category">
+                      <button class="button" aria-label="Edit category" @click="openEditModal(cat)">
+                        <span class="icon"><i class="fa-solid fa-pen" /></span>
+                      </button>
+                    </AppTooltip>
+                    <AppTooltip label="Delete category">
+                      <button
+                        class="button is-danger"
+                        aria-label="Delete category"
+                        @click="openDeleteConfirm(cat)"
+                      >
+                        <span class="icon"><i class="fa-solid fa-trash" /></span>
+                      </button>
+                    </AppTooltip>
                   </div>
                 </td>
               </tr>
               <tr v-if="categories.length === 0">
-                <td :colspan="authenticated ? 6 : 5" class="has-text-centered has-text-grey">
+                <td :colspan="authenticated ? 5 : 4" class="has-text-centered has-text-grey">
                   No categories defined.
                 </td>
               </tr>
@@ -239,147 +220,113 @@ onMounted(loadCategories)
         </div>
       </template>
 
-      <!-- New/Edit Category Modal -->
-      <div class="modal" :class="{ 'is-active': showModal }">
-        <div class="modal-background" @click="closeModal" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">
-              <strong>{{ formMode === 'edit' ? 'Edit Category' : 'New Category' }}</strong>
-            </p>
-            <button class="delete" aria-label="close" @click="closeModal" />
-          </header>
-          <section class="modal-card-body">
-            <div class="field">
-              <label class="label">Category Name</label>
-              <div class="control">
-                <input
-                  v-model="formName"
-                  class="input"
-                  type="text"
-                  placeholder="e.g. Artist"
-                  @keyup.enter="submitForm"
-                />
-              </div>
-            </div>
-            <div class="field">
-              <label class="label">Shortcode</label>
-              <div class="control">
-                <input
-                  v-model="formShort"
-                  class="input"
-                  type="text"
-                  placeholder="e.g. a"
-                  maxlength="5"
-                  @keyup.enter="submitForm"
-                />
-              </div>
-              <p class="help">
-                A short prefix users type when adding tags (e.g. <code>a:artist name</code>).
-              </p>
-            </div>
-            <div class="field">
-              <label class="label">Display Color</label>
-              <div class="color-picker">
-                <button
-                  v-for="c in VALID_COLORS"
-                  :key="c"
-                  type="button"
-                  class="tag is-medium color-swatch"
-                  :class="[colorToTagClass(c), { 'is-selected-swatch': formColor === c }]"
-                  :title="c"
-                  @click="formColor = c"
-                >
-                  {{ c }}
-                </button>
-              </div>
-              <p class="help mt-2">
-                Preview:
-                <span class="tag is-medium" :class="colorToTagClass(formColor)">{{
-                  formName || 'Sample'
-                }}</span>
-              </p>
-            </div>
-            <div class="field">
-              <label class="label">Description</label>
-              <div class="control">
-                <textarea
-                  v-model="formDescription"
-                  class="textarea"
-                  rows="2"
-                  placeholder="Brief description shown in the tag help modal"
-                />
-              </div>
-            </div>
-            <div class="field">
-              <label class="label">Sort Order</label>
-              <div class="control">
-                <input
-                  v-model.number="formSortOrder"
-                  class="input"
-                  type="number"
-                  min="0"
-                  @keyup.enter="submitForm"
-                />
-              </div>
-              <p class="help">
-                Controls display order in the help modal and tag sorting. Lower numbers appear
-                first.
-              </p>
-            </div>
-            <p v-if="formHelp" class="help" :class="formHelpClass">
-              {{ formHelp }}
-            </p>
-          </section>
-          <footer class="modal-card-foot">
-            <div class="buttons">
-              <button
-                class="button is-primary"
-                :class="{ 'is-loading': formLoading }"
-                @click="submitForm"
-              >
-                {{ formMode === 'edit' ? 'Save Changes' : 'Create Category' }}
-              </button>
-              <button class="button" @click="closeModal">Cancel</button>
-            </div>
-          </footer>
+      <AppDialog
+        :open="showModal"
+        :title="formMode === 'edit' ? 'Edit Category' : 'New Category'"
+        @update:open="!$event && closeModal()"
+      >
+        <div class="field">
+          <label class="label">Category Name</label>
+          <div class="control">
+            <input
+              v-model="formName"
+              class="input"
+              type="text"
+              placeholder="e.g. Artist"
+              @keyup.enter="submitForm"
+            />
+          </div>
         </div>
-      </div>
+        <div class="field">
+          <label class="label">Display Color</label>
+          <div class="color-picker">
+            <button
+              v-for="c in VALID_COLORS"
+              :key="c"
+              type="button"
+              class="tag is-medium color-swatch"
+              :class="[colorToTagClass(c), { 'is-selected-swatch': formColor === c }]"
+              :title="c"
+              @click="formColor = c"
+            >
+              {{ c }}
+            </button>
+          </div>
+          <p class="help mt-2">
+            Preview:
+            <span class="tag is-medium" :class="colorToTagClass(formColor)">{{
+              formName || 'Sample'
+            }}</span>
+          </p>
+        </div>
+        <div class="field">
+          <label class="label">Description</label>
+          <div class="control">
+            <textarea
+              v-model="formDescription"
+              class="textarea"
+              rows="2"
+              placeholder="Brief description shown in the tag help modal"
+            />
+          </div>
+        </div>
+        <div class="field">
+          <label class="label">Sort Order</label>
+          <div class="control">
+            <input
+              v-model.number="formSortOrder"
+              class="input"
+              type="number"
+              min="0"
+              @keyup.enter="submitForm"
+            />
+          </div>
+          <p class="help">
+            Controls display order in the help modal and tag sorting. Lower numbers appear first.
+          </p>
+        </div>
+        <p v-if="formHelp" class="help" :class="formHelpClass">
+          {{ formHelp }}
+        </p>
 
-      <!-- Delete Confirmation Modal -->
-      <div class="modal" :class="{ 'is-active': showDeleteModal }">
-        <div class="modal-background" @click="showDeleteModal = false" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">
-              <strong>Delete Category</strong>
-            </p>
-            <button class="delete" aria-label="close" @click="showDeleteModal = false" />
-          </header>
-          <section class="modal-card-body">
-            <p>
-              Are you sure you want to delete the
-              <strong>{{ deleteTarget?.category_name }}</strong> category?
-            </p>
-            <p class="has-text-danger mt-2">
-              <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
-              This will only work if no tags are assigned to this category.
-            </p>
-          </section>
-          <footer class="modal-card-foot">
-            <div class="buttons">
-              <button
-                class="button is-danger"
-                :class="{ 'is-loading': deleteLoading }"
-                @click="confirmDelete"
-              >
-                Delete
-              </button>
-              <button class="button" @click="showDeleteModal = false">Cancel</button>
-            </div>
-          </footer>
-        </div>
-      </div>
+        <template #footer>
+          <button
+            class="button is-primary"
+            :class="{ 'is-loading': formLoading }"
+            @click="submitForm"
+          >
+            {{ formMode === 'edit' ? 'Save Changes' : 'Create Category' }}
+          </button>
+          <button class="button is-ghost" @click="closeModal">Cancel</button>
+        </template>
+      </AppDialog>
+
+      <AppDialog
+        :open="showDeleteModal"
+        title="Delete Category"
+        destructive
+        @update:open="showDeleteModal = $event"
+      >
+        <p>
+          Are you sure you want to delete the
+          <strong>{{ deleteTarget?.category_name }}</strong> category?
+        </p>
+        <p class="has-text-danger mt-2">
+          <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
+          This will only work if no tags are assigned to this category.
+        </p>
+
+        <template #footer>
+          <button
+            class="button is-danger"
+            :class="{ 'is-loading': deleteLoading }"
+            @click="confirmDelete"
+          >
+            Delete
+          </button>
+          <button class="button is-ghost" @click="showDeleteModal = false">Cancel</button>
+        </template>
+      </AppDialog>
     </div>
   </section>
 </template>
@@ -406,7 +353,7 @@ onMounted(loadCategories)
 }
 
 .color-swatch.is-selected-swatch {
-  border-color: #ffffff;
+  border-color: var(--text-1);
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5);
   transform: scale(1.08);
 }

@@ -18,6 +18,8 @@ import type { MediaItem, MediaPage } from '../types'
 import GalleryCard from '../components/GalleryCard.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import PageHeader from '../components/PageHeader.vue'
+import EmptyState from '../components/EmptyState.vue'
 import { prefetchThumbnails } from '../composables/usePrefetch'
 
 // Named so App.vue can keep this view alive (preserving accumulated items and
@@ -43,6 +45,10 @@ const api = useApi()
 const { items, totalPages, loading, loadFailed, fetchPage } = useGalleryData()
 
 const INFINITE_BATCH_SIZE = 40
+// How far beyond the viewport the bottom sentinel still counts as "reached".
+// Shared by the IntersectionObserver's rootMargin and the top-up loop in
+// loadNextBatch, so the two can't disagree about when to fetch.
+const SENTINEL_MARGIN = 400
 // Viewport y (just below the fixed navbar) used to decide which card is "at the
 // top" and where to park the current page after an entry-time previous-page load.
 const CONTENT_TOP = 60
@@ -74,6 +80,35 @@ let restoreOnActivate = false
 let bootstrapTopLoad = false
 
 const displayItems = computed(() => (isInfiniteScroll.value ? accumulatedItems.value : items.value))
+
+const headerTitle = computed(() => {
+  if (!props.tags) return 'Media'
+  return props.tags === 'untagged' ? 'Untagged' : props.tags.split(',').join(', ')
+})
+
+/** Position readout. In infinite mode the pager is gone, so this is the only
+ *  place the current position is reported. */
+const headerMeta = computed(() => {
+  const total = store.totalMedia.toLocaleString()
+  if (isInfiniteScroll.value) return `${displayItems.value.length.toLocaleString()} loaded`
+  return props.tags
+    ? `page ${props.page} of ${totalPages.value}`
+    : `${total} items · page ${props.page} of ${totalPages.value}`
+})
+
+/**
+ * Infinite scroll has no pager and scrolls the page header out of view, so the
+ * status bar below is the only thing telling you where you are. A page number
+ * is meaningless once you're scrolling continuously — position is reported as
+ * an item index against the collection total instead.
+ */
+const topItemIndex = ref(1)
+
+const statusPosition = computed(() => {
+  const known = props.tags ? totalPages.value * props.perPage : store.totalMedia
+  const total = known > 0 ? known.toLocaleString() : '?'
+  return `${topItemIndex.value.toLocaleString()} of ${total}`
+})
 
 /** The grid route for a given page (infinite scroll always uses 40-item pages). */
 function gridRoute(page: number) {
@@ -108,6 +143,10 @@ async function loadPage() {
       allLoaded.value = true
     } else {
       currentBatchPage.value = start + 1
+      // Warm the batch you're about to scroll into. Paged mode has always done
+      // this; infinite scroll never did, so every batch arrived cold — which is
+      // exactly where it's most noticeable, since the grid keeps moving.
+      void prefetchAdjacentPage(currentBatchPage.value, INFINITE_BATCH_SIZE, props.tags)
     }
   } else {
     await fetchPage(props.page, props.perPage, props.tags)
@@ -141,23 +180,51 @@ async function loadNextBatch() {
   if (loadingMore.value || allLoaded.value) return
   loadingMore.value = true
   try {
-    const data = await api.get<MediaPage>(
-      listUrl(currentBatchPage.value, INFINITE_BATCH_SIZE, props.tags),
-    )
-    const newItems = data?.items ?? []
-    accumulatedItems.value = [...accumulatedItems.value, ...newItems]
-    const maxPages = data?.total_pages ?? 1
-    if (currentBatchPage.value >= maxPages || newItems.length === 0) {
-      allLoaded.value = true
-    } else {
-      currentBatchPage.value++
-    }
-    updateStoreItemIds()
+    // Keep pulling batches while the sentinel is still within the trigger zone.
+    //
+    // IntersectionObserver only reports *transitions*. On a viewport tall enough
+    // that a freshly-loaded batch doesn't push the sentinel back out of view,
+    // the callback never fires a second time and loading stalls — the spinner
+    // sits there forever with nothing left to scroll. Seen on a 1285px-tall
+    // viewport, where 40 items across 6 columns left the document only ~500px
+    // taller than the window.
+    do {
+      const data = await api.get<MediaPage>(
+        listUrl(currentBatchPage.value, INFINITE_BATCH_SIZE, props.tags),
+      )
+      const newItems = data?.items ?? []
+      accumulatedItems.value = [...accumulatedItems.value, ...newItems]
+      const maxPages = data?.total_pages ?? 1
+      if (currentBatchPage.value >= maxPages || newItems.length === 0) {
+        allLoaded.value = true
+      } else {
+        currentBatchPage.value++
+        // Stay one batch ahead of the scroll, the same way paging stays one page
+        // ahead of Next. The SW LRU-caps thumbnails at 2000 entries, so this
+        // can't grow without bound.
+        void prefetchAdjacentPage(currentBatchPage.value, INFINITE_BATCH_SIZE, props.tags)
+      }
+      updateStoreItemIds()
+      // Let the new rows lay out before re-measuring where the sentinel landed.
+      await nextTick()
+    } while (!allLoaded.value && sentinelInTriggerZone())
   } catch (e) {
     console.error('Failed to load more items:', e)
   } finally {
     loadingMore.value = false
   }
+}
+
+/**
+ * Whether the bottom sentinel still sits inside the observer's trigger area.
+ * Mirrors the `rootMargin` on `setupObserver` — if the two drift apart, the
+ * top-up loop above stops matching what the observer would have done.
+ */
+function sentinelInTriggerZone(): boolean {
+  const el = scrollSentinel.value
+  if (!el) return false
+  const rect = el.getBoundingClientRect()
+  return rect.top < window.innerHeight + SENTINEL_MARGIN && rect.bottom > -SENTINEL_MARGIN
 }
 
 // Load the page *above* the current top (when the infinite list started partway
@@ -202,7 +269,7 @@ function setupObserver() {
     (entries) => {
       if (entries[0].isIntersecting) void loadNextBatch()
     },
-    { rootMargin: '400px' },
+    { rootMargin: `${SENTINEL_MARGIN}px` },
   )
   observer.observe(el)
 }
@@ -234,10 +301,10 @@ watch(topSentinel, setupTopObserver)
 
 let scrollRaf = 0
 
-/** Page index of the topmost card currently visible below the navbar. */
-function computeTopPage(): number {
+/** Offset of the topmost card currently visible, within the accumulated list. */
+function computeTopOffset(): number {
   const grid = gridEl.value
-  if (!grid || grid.children.length === 0) return batchStartPage.value
+  if (!grid || grid.children.length === 0) return 0
   const cards = grid.children
   // Cards are in document order, so `rect.bottom` increases with index — binary
   // search for the first card still visible below the navbar.
@@ -253,22 +320,34 @@ function computeTopPage(): number {
       lo = mid + 1
     }
   }
-  return batchStartPage.value + Math.floor(first / INFINITE_BATCH_SIZE)
+  return first
 }
 
 function onScroll() {
   if (!isInfiniteScroll.value) return
   // Near the top: pull in earlier pages (the observer bootstraps the first one).
   if (window.scrollY < 300) void loadPrevBatch()
+
+  // Everything that reads layout stays inside the animation frame. Each
+  // `getBoundingClientRect()` in computeTopOffset forces a synchronous layout
+  // flush, and the cards use `content-visibility: auto` — running that on every
+  // scroll event pins the main thread hard enough that the sentinel's
+  // IntersectionObserver never gets to fire, so the next batch never loads.
   if (scrollRaf) return
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = 0
-    const page = computeTopPage()
+    const offset = computeTopOffset()
+    topItemIndex.value = (batchStartPage.value - 1) * INFINITE_BATCH_SIZE + offset + 1
+    const page = batchStartPage.value + Math.floor(offset / INFINITE_BATCH_SIZE)
     if (page !== currentInfinitePage.value) {
       currentInfinitePage.value = page
       void router.replace(gridRoute(page))
     }
   })
+}
+
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -288,10 +367,18 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function addListeners() {
+  // A frame queued while the view was inactive (or the tab hidden) may never
+  // run, which would leave `scrollRaf` set and silently disable position
+  // tracking for good. Clearing it here makes that self-healing.
+  scrollRaf = 0
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('scroll', onScroll, { passive: true })
 }
 function removeListeners() {
+  if (scrollRaf) {
+    cancelAnimationFrame(scrollRaf)
+    scrollRaf = 0
+  }
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('scroll', onScroll)
 }
@@ -404,30 +491,26 @@ function onCardClick(id: number) {
 <template>
   <section class="section">
     <div class="gallery-container">
+      <PageHeader :title="headerTitle" :meta="headerMeta" />
+
       <LoadingSpinner v-if="loading" />
 
-      <div v-else-if="loadFailed || displayItems.length === 0" class="has-text-centered py-6">
-        <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-images fa-3x" />
-        </span>
-        <p class="is-size-5 has-text-grey mt-4">
-          {{ loadFailed ? 'Could not load the gallery. Please try again.' : 'No items found.' }}
-        </p>
-        <button v-if="loadFailed" class="button is-indigo mt-4" @click="loadPage">
+      <EmptyState
+        v-else-if="loadFailed || displayItems.length === 0"
+        :icon="loadFailed ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-images'"
+        :title="loadFailed ? 'Could not load the gallery.' : 'No items found.'"
+        :hint="tags && !loadFailed ? 'Try removing a tag from the search.' : ''"
+      >
+        <button v-if="loadFailed" class="button" @click="loadPage">
           <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
-      </div>
+      </EmptyState>
 
       <div v-else>
-        <PaginationBar
-          v-if="!isInfiniteScroll"
-          :current-page="page"
-          :total-pages="totalPages"
-          @navigate="onNavigate"
-        />
-        <hr v-if="!isInfiniteScroll" />
-
+        <!-- One pagination bar, at the bottom. The top copy plus its two rules
+             cost ~170px and pushed the thumbnails below the fold — nobody
+             paginates before they've looked at the page. -->
         <div style="min-height: 75vh">
           <div
             v-if="isInfiniteScroll && batchStartPage > 1"
@@ -438,7 +521,7 @@ function onCardClick(id: number) {
               ><i class="fa-solid fa-spinner fa-spin fa-2x"
             /></span>
           </div>
-          <div ref="gridEl" class="gallery-grid">
+          <div ref="gridEl" class="media-grid">
             <GalleryCard
               v-for="item in displayItems"
               :key="item.media_id"
@@ -462,9 +545,28 @@ function onCardClick(id: number) {
           All items loaded
         </p>
 
-        <hr v-if="!isInfiniteScroll" />
+        <!-- Infinite scroll drops the pager and scrolls the page header away, so
+             without this you lose both the breadcrumb and any sense of position.
+             Pinned to the viewport, it carries the trail, where you are in the
+             collection, and a way back. -->
+        <div v-if="isInfiniteScroll" class="scroll-status" role="status" aria-live="off">
+          <span class="scroll-status-trail">
+            <i class="fa-solid fa-house" aria-hidden="true" />
+            <span>{{ headerTitle }}</span>
+          </span>
+          <span class="scroll-status-pos">{{ statusPosition }}</span>
+          <span class="scroll-status-loaded"
+            >{{ displayItems.length.toLocaleString() }} loaded</span
+          >
+          <button class="scroll-status-top" title="Back to top" @click="scrollToTop">
+            <i class="fa-solid fa-arrow-up" aria-hidden="true" />
+            <span>Top</span>
+          </button>
+        </div>
+
         <PaginationBar
           v-if="!isInfiniteScroll"
+          class="mt-4"
           :current-page="page"
           :total-pages="totalPages"
           @navigate="onNavigate"
@@ -474,23 +576,81 @@ function onCardClick(id: number) {
   </section>
 </template>
 
+<!-- The grid itself lives in style.css as `.media-grid`, shared with Favorites. -->
+
 <style scoped>
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 200px));
-  gap: 8px;
-  justify-content: center;
+.scroll-status {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-3);
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: calc(100vw - 2 * var(--sp-4));
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  /* Deliberate: a floating status pill over the media wall, the only
+     fully-rounded shape in the app. Everything else uses the --r-* scale. */
+  border-radius: 999px; /* unslop-ignore */
+  box-shadow: var(--shadow-2);
+  font-size: var(--t-sm);
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
-@media (min-width: 769px) {
-  .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 200px));
+.scroll-status-trail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-1);
+  font-weight: 550;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scroll-status-pos {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+
+.scroll-status-loaded {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.scroll-status-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px; /* matches the pill it sits in — unslop-ignore */
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.scroll-status-top:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+/* On a phone the bar would eat the grid, so it keeps only what you can't get
+   anywhere else: position and a way back. */
+@media screen and (max-width: 640px) {
+  .scroll-status {
+    gap: var(--sp-2);
   }
-}
-
-@media (min-width: 1200px) {
-  .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(170px, 200px));
+  .scroll-status-trail,
+  .scroll-status-loaded {
+    display: none;
   }
 }
 </style>

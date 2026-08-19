@@ -56,20 +56,6 @@ class TagCategoryRepository
         return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
     }
 
-    /**
-     * Gets a tag category by shortcode, or null if none exists.
-     */
-    public function getByShortcode(string $short): ?TagCategory
-    {
-        $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE category_short = :category_short";
-        $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':category_short', $short, PDO::PARAM_STR);
-        $stmt->execute();
-        $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
-        $category = $stmt->fetch();
-
-        return $category instanceof TagCategory ? $category : null;
-    }
 
     /**
      * Gets the tags belonging to a category.
@@ -97,11 +83,10 @@ class TagCategoryRepository
     {
         if (empty($category->category_id)) {
             $sql = "INSERT INTO " . self::MAIN_TABLE
-                 . " (category_name, category_short, color, description, sort_order)"
-                 . " VALUES (:category_name, :category_short, :color, :description, :sort_order)";
+                 . " (category_name, color, description, sort_order)"
+                 . " VALUES (:category_name, :color, :description, :sort_order)";
             $stmt = $this->db->prepare($sql);
             $stmt->bindValue(':category_name', $category->category_name, PDO::PARAM_STR);
-            $stmt->bindValue(':category_short', $category->category_short, PDO::PARAM_STR);
             $stmt->bindValue(':color', $category->color, PDO::PARAM_STR);
             $stmt->bindValue(':description', $category->description, PDO::PARAM_STR);
             $stmt->bindValue(':sort_order', $category->sort_order, PDO::PARAM_INT);
@@ -110,12 +95,11 @@ class TagCategoryRepository
             $category->setCategoryId((int)$this->db->lastInsertId());
         } else {
             $sql = "UPDATE " . self::MAIN_TABLE
-                 . " SET category_name = :category_name, category_short = :category_short,"
+                 . " SET category_name = :category_name,"
                  . " color = :color, description = :description, sort_order = :sort_order"
                  . " WHERE category_id = :category_id";
             $stmt = $this->db->prepare($sql);
             $stmt->bindValue(':category_name', $category->category_name, PDO::PARAM_STR);
-            $stmt->bindValue(':category_short', $category->category_short, PDO::PARAM_STR);
             $stmt->bindValue(':color', $category->color, PDO::PARAM_STR);
             $stmt->bindValue(':description', $category->description, PDO::PARAM_STR);
             $stmt->bindValue(':sort_order', $category->sort_order, PDO::PARAM_INT);
@@ -166,7 +150,7 @@ class TagCategoryRepository
      *
      * @return string[] List of conflicting fields ('name', 'short').
      */
-    public function checkConflicts(string $name, string $short, int $excludeId = 0): array
+    public function checkConflicts(string $name, int $excludeId = 0): array
     {
         $conflicts = [];
         $stmt = $this->db->prepare(
@@ -177,13 +161,6 @@ class TagCategoryRepository
             $conflicts[] = 'name';
         }
 
-        $stmt = $this->db->prepare(
-            "SELECT category_id FROM " . self::MAIN_TABLE . " WHERE category_short = :s COLLATE NOCASE AND category_id != :eid"
-        );
-        $stmt->execute([':s' => $short, ':eid' => $excludeId]);
-        if ($stmt->fetchColumn()) {
-            $conflicts[] = 'short';
-        }
 
         return $conflicts;
     }

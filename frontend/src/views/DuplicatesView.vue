@@ -12,6 +12,10 @@ import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
 import type { DuplicateReport, DuplicateMatch, BulkDeleteResult, LoginResponse } from '../types'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import PageHeader from '../components/PageHeader.vue'
+import EmptyState from '../components/EmptyState.vue'
+import StatRow from '../components/StatRow.vue'
+import AppDialog from '../components/AppDialog.vue'
 
 const api = useApi()
 const store = useGalleryStore()
@@ -28,6 +32,7 @@ const loading = ref(false)
 const loadFailed = ref(false)
 const scanning = ref(false)
 const deleting = ref(false)
+const showDeleteConfirm = ref(false)
 const dismissing = ref<string | null>(null)
 const selectedMedia = ref<Set<number>>(new Set())
 
@@ -98,13 +103,7 @@ async function runScan() {
 
 async function deleteSelected() {
   if (!hasSelection.value) return
-  if (
-    !confirm(
-      `Are you sure you want to delete ${selectionCount.value} media item(s) from the database?`,
-    )
-  )
-    return
-
+  showDeleteConfirm.value = false
   deleting.value = true
 
   try {
@@ -256,95 +255,61 @@ onMounted(() => {
 
       <!-- Authenticated Content -->
       <template v-else>
-        <!-- Header -->
-        <div class="level">
-          <div class="level-left">
-            <div class="level-item">
-              <h1 class="title">Duplicate Media</h1>
-            </div>
-          </div>
-          <div class="level-right">
-            <div class="level-item">
-              <button
-                class="button is-info"
-                :class="{ 'is-loading': scanning }"
-                :disabled="scanning"
-                @click="runScan"
-              >
-                <span class="icon"><i class="fa-solid fa-magnifying-glass" /></span>
-                <span>Run New Scan</span>
-              </button>
-            </div>
-            <div v-if="hasSelection" class="level-item">
-              <button
-                class="button is-danger"
-                :class="{ 'is-loading': deleting }"
-                :disabled="deleting"
-                @click="deleteSelected"
-              >
-                <span class="icon"><i class="fa-solid fa-trash" /></span>
-                <span>Delete Selected ({{ selectionCount }})</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <PageHeader title="Duplicates" :meta="report ? `${report.duplicates_found} pairs` : ''">
+          <template #actions>
+            <button
+              class="button"
+              :class="{ 'is-loading': scanning }"
+              :disabled="scanning"
+              @click="runScan"
+            >
+              <span class="icon"><i class="fa-solid fa-magnifying-glass" /></span>
+              <span>Run New Scan</span>
+            </button>
+            <button
+              v-if="hasSelection"
+              class="button is-danger"
+              :class="{ 'is-loading': deleting }"
+              :disabled="deleting"
+              @click="showDeleteConfirm = true"
+            >
+              <span class="icon"><i class="fa-solid fa-trash" /></span>
+              <span>Delete Selected ({{ selectionCount }})</span>
+            </button>
+          </template>
+        </PageHeader>
 
         <!-- Loading -->
         <LoadingSpinner v-if="loading" message="Loading duplicates report..." />
 
-        <!-- Load Failed -->
-        <div v-else-if="loadFailed" class="has-text-centered py-6">
-          <span class="icon is-large has-text-grey-light">
-            <i class="fa-solid fa-triangle-exclamation fa-3x" />
-          </span>
-          <p class="is-size-5 has-text-grey mt-4">Could not load the duplicates report.</p>
-          <button class="button is-indigo mt-4" @click="loadReport">
+        <EmptyState
+          v-else-if="loadFailed"
+          icon="fa-solid fa-triangle-exclamation"
+          title="Could not load the duplicates report."
+        >
+          <button class="button" @click="loadReport">
             <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
             <span>Retry</span>
           </button>
-        </div>
+        </EmptyState>
 
-        <!-- No Report -->
-        <div v-else-if="!report" class="has-text-centered py-6">
-          <span class="icon is-large has-text-grey-light">
-            <i class="fa-solid fa-magnifying-glass fa-3x" />
-          </span>
-          <p class="is-size-5 has-text-grey mt-4">
-            No duplicate report found. Run a scan to generate one.
-          </p>
-        </div>
+        <EmptyState
+          v-else-if="!report"
+          icon="fa-solid fa-magnifying-glass"
+          title="No duplicate report yet."
+          hint="Run a scan to generate one."
+        />
 
         <!-- Report Content -->
         <template v-else>
-          <!-- Report metadata -->
-          <div class="box mb-5">
-            <div class="columns">
-              <div class="column has-text-centered">
-                <p class="heading">Report File</p>
-                <p class="title is-6">
-                  {{ report.report_file }}
-                </p>
-              </div>
-              <div class="column has-text-centered">
-                <p class="heading">Generated</p>
-                <p class="title is-6">
-                  {{ report.generated_at || 'Unknown' }}
-                </p>
-              </div>
-              <div class="column has-text-centered">
-                <p class="heading">Images Compared</p>
-                <p class="title is-6">
-                  {{ report.images_compared?.toLocaleString() || '—' }}
-                </p>
-              </div>
-              <div class="column has-text-centered">
-                <p class="heading">Duplicates Found</p>
-                <p class="title is-6">
-                  {{ report.duplicates_found }}
-                </p>
-              </div>
-            </div>
-          </div>
+          <StatRow
+            :stats="[
+              { label: 'Report file', value: report.report_file },
+              { label: 'Generated', value: report.generated_at || 'Unknown' },
+              { label: 'Images compared', value: report.images_compared?.toLocaleString() || '—' },
+              { label: 'Duplicates found', value: report.duplicates_found },
+            ]"
+          />
 
           <!-- Selection Controls -->
           <div v-if="report.matches.length > 0" class="buttons mb-4">
@@ -358,10 +323,12 @@ onMounted(() => {
             </button>
           </div>
 
-          <!-- No duplicates -->
-          <div v-if="report.matches.length === 0" class="notification is-info is-light">
-            No duplicate pairs found in the latest report.
-          </div>
+          <EmptyState
+            v-if="report.matches.length === 0"
+            icon="fa-solid fa-circle-check"
+            title="No duplicate pairs in the latest report."
+            :hint="`Scanned ${report.images_compared?.toLocaleString() || '—'} images.`"
+          />
 
           <!-- Duplicate Pairs -->
           <div v-for="(match, index) in report.matches" :key="index" class="box mb-5">
@@ -476,7 +443,7 @@ onMounted(() => {
               <div class="level-right">
                 <div class="level-item">
                   <button
-                    class="button is-amber is-outlined"
+                    class="button is-warning is-outlined"
                     :class="{
                       'is-loading':
                         dismissing === `${match.media_1.media_id}:${match.media_2.media_id}`,
@@ -494,6 +461,40 @@ onMounted(() => {
           </div>
         </template>
       </template>
+
+      <!-- Bulk deletion is the most destructive action in the app; it was the
+           last thing still behind a native confirm(), which can't be styled,
+           can't be focus-trapped and can't be tested. -->
+      <AppDialog
+        :open="showDeleteConfirm"
+        :title="`Delete ${selectionCount} media item${selectionCount === 1 ? '' : 's'}?`"
+        destructive
+        @update:open="showDeleteConfirm = $event"
+      >
+        <p>
+          This removes {{ selectionCount }} selected item{{ selectionCount === 1 ? '' : 's' }} from
+          the database.
+        </p>
+        <p class="has-text-danger mt-2">
+          <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
+          This action cannot be undone.
+        </p>
+
+        <template #footer>
+          <button
+            class="button is-danger"
+            :class="{ 'is-loading': deleting }"
+            :disabled="deleting"
+            @click="deleteSelected"
+          >
+            <span class="icon"><i class="fa-solid fa-trash" /></span>
+            <span>Delete {{ selectionCount }}</span>
+          </button>
+          <button class="button is-ghost" :disabled="deleting" @click="showDeleteConfirm = false">
+            Cancel
+          </button>
+        </template>
+      </AppDialog>
     </div>
   </section>
 </template>

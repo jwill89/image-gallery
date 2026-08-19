@@ -11,10 +11,10 @@ namespace Gallery\Core;
 class Configuration
 {
     /** Application version (SemVer). Surfaced in the OpenAPI spec and GET /version. */
-    public const string VERSION = '3.3.0';
+    public const string VERSION = '4.0.0';
 
     /** The OpenAPI/HTTP API contract version. Bumped on breaking API changes. */
-    public const string API_VERSION = '3.0.0';
+    public const string API_VERSION = '4.0.0';
 
     public const int DEFAULT_PER_PAGE = 40;
 

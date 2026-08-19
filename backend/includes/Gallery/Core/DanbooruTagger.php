@@ -23,10 +23,23 @@ class DanbooruTagger
     /** Minimum IQDB similarity score (0–100) to accept as a match. */
     private const int IQDB_SCORE_THRESHOLD = 90;
 
+    /**
+     * Why the last upstream call failed, when it wasn't simply "no match".
+     * These separate a configuration problem from an empty result — the two
+     * were previously reported identically as "not found on Danbooru".
+     */
+    public const string FAILURE_AUTH = 'auth';
+    public const string FAILURE_RATE_LIMIT = 'rate_limit';
+    public const string FAILURE_NETWORK = 'network';
+    public const string FAILURE_UPSTREAM = 'upstream';
+
     private PDO $db;
     private DanbooruRulesRepository $rulesRepository;
     private string $login;
     private string $apiKey;
+
+    /** One of the FAILURE_* constants, or null when the last call was fine. */
+    private ?string $lastFailure = null;
 
     /** Whether the import maps and DB caches have been warmed (see ensureInitialized()). */
     private bool $initialized = false;
@@ -108,13 +121,14 @@ class DanbooruTagger
      * @param string      $md5      The MD5 hash of the file.
      * @param string|null $fileName The media file name (enables IQDB fallback via public URL).
      *
-     * @return array{found: bool, tags_created: int, tags_applied: int, method: string}
+     * @return array{found: bool, tags_created: int, tags_applied: int, method: string, failure: string|null}
      */
     public function importTagsForMedia(int $mediaId, string $md5, ?string $fileName = null): array
     {
         $this->ensureInitialized();
 
-        $stats = ['found' => false, 'tags_created' => 0, 'tags_applied' => 0, 'method' => 'none'];
+        $stats = ['found' => false, 'tags_created' => 0, 'tags_applied' => 0, 'method' => 'none', 'failure' => null];
+        $this->lastFailure = null;
 
         // 1. Try exact MD5 lookup
         $posts = $this->apiGet('/posts.json?tags=md5:' . urlencode($md5));
@@ -138,6 +152,7 @@ class DanbooruTagger
         }
 
         if ($post === null) {
+            $stats['failure'] = $this->lastFailure;
             return $stats;
         }
 
@@ -153,18 +168,20 @@ class DanbooruTagger
      * @param int $mediaId       The gallery media_id.
      * @param int $danbooruPostId The Danbooru post ID to import from.
      *
-     * @return array{found: bool, tags_created: int, tags_applied: int, method: string}
+     * @return array{found: bool, tags_created: int, tags_applied: int, method: string, failure: string|null}
      */
     public function importTagsFromPost(int $mediaId, int $danbooruPostId): array
     {
         $this->ensureInitialized();
 
-        $stats = ['found' => false, 'tags_created' => 0, 'tags_applied' => 0, 'method' => 'none'];
+        $stats = ['found' => false, 'tags_created' => 0, 'tags_applied' => 0, 'method' => 'none', 'failure' => null];
+        $this->lastFailure = null;
 
         $post = $this->apiGet('/posts/' . $danbooruPostId . '.json');
 
         if (!is_array($post) || empty($post['id'])) {
             $this->debug("  Post #{$danbooruPostId} not found");
+            $stats['failure'] = $this->lastFailure;
             return $stats;
         }
 
@@ -182,7 +199,7 @@ class DanbooruTagger
      *
      * @param int $mediaId The gallery media_id.
      * @param array<string, mixed> $post The decoded Danbooru post object.
-     * @param array{found: bool, tags_created: int, tags_applied: int, method: string} $stats Stats array to update.
+     * @param array{found: bool, tags_created: int, tags_applied: int, method: string, failure: string|null} $stats Stats array to update.
      * @throws \Throwable If applying the tag set fails; the transaction is rolled back first.
      */
     private function applyPostTags(int $mediaId, array $post, array &$stats): void
@@ -388,11 +405,28 @@ class DanbooruTagger
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         unset($ch);
 
         if ($httpCode === 200 && is_string($response)) {
+            $this->lastFailure = null;
             return json_decode($response, true);
         }
+
+        // Every non-200 used to collapse into `null`, which the caller reported
+        // as "not found on Danbooru" — so an expired API key, a rate limit and a
+        // genuine miss were indistinguishable to the user. Record why instead.
+        $this->lastFailure = match (true) {
+            $curlError !== ''     => self::FAILURE_NETWORK,
+            $httpCode === 401,
+            $httpCode === 403     => self::FAILURE_AUTH,
+            $httpCode === 429     => self::FAILURE_RATE_LIMIT,
+            $httpCode >= 500      => self::FAILURE_UPSTREAM,
+            default               => null,   // 404 etc. — a real miss
+        };
+        $this->debug("  API {$path} → HTTP {$httpCode}"
+            . ($curlError !== '' ? " (curl: {$curlError})" : '')
+            . ($this->lastFailure !== null ? " [{$this->lastFailure}]" : ''));
 
         return null;
     }

@@ -5,6 +5,8 @@ import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
 import type { LoginResponse } from '../types'
+import AppAlert from '../components/AppAlert.vue'
+import PageHeader from '../components/PageHeader.vue'
 
 const api = useApi()
 const store = useGalleryStore()
@@ -51,6 +53,41 @@ const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.flv', '.wmv
 const ALL_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
 
 const acceptString = ALL_EXTENSIONS.join(',')
+
+/**
+ * Persistent summary of the last upload, shown beneath the per-file list.
+ *
+ * The toasts report the same counts as they happen and then leave; this stays
+ * so the outcome is still on screen once they have gone. Unlike the banner it
+ * replaces, it does not require an empty file list — failed files stay
+ * selected for retry, which meant the old summary was hidden in exactly the
+ * case worth summarising.
+ */
+const uploadSummary = computed(() => {
+  if (uploading.value || uploadResults.value.length === 0) return null
+
+  const counts = { success: 0, duplicate: 0, error: 0 }
+  for (const r of uploadResults.value) {
+    if (r.status === 'success') counts.success++
+    else if (r.status === 'duplicate') counts.duplicate++
+    else if (r.status === 'error') counts.error++
+  }
+  if (counts.success + counts.duplicate + counts.error === 0) return null
+
+  const parts: string[] = []
+  if (counts.success > 0) parts.push(`${counts.success} uploaded`)
+  if (counts.duplicate > 0) parts.push(`${counts.duplicate} skipped as duplicates`)
+  if (counts.error > 0) parts.push(`${counts.error} failed`)
+  const message = `${parts.join(', ')}.`
+
+  if (counts.error > 0) {
+    return { severity: 'danger' as const, title: 'Upload finished with errors', message }
+  }
+  if (counts.duplicate > 0) {
+    return { severity: 'warning' as const, title: 'Upload complete', message }
+  }
+  return { severity: 'success' as const, title: 'Upload complete', message }
+})
 
 const hasFiles = computed(() => selectedFiles.value.length > 0)
 const totalSize = computed(() => selectedFiles.value.reduce((sum, f) => sum + f.size, 0))
@@ -321,21 +358,10 @@ async function uploadFiles() {
 
       <!-- Authenticated Content -->
       <template v-else>
-        <h1 class="title mb-2">Upload Media</h1>
-        <p class="subtitle is-6 has-text-grey">
-          {{ store.totalMedia.toLocaleString() }} items currently in the gallery
-        </p>
-
-        <!-- Danbooru Tag Fetch Toggle -->
-        <div class="field">
-          <label class="checkbox">
-            <input v-model="fetchTags" type="checkbox" />
-            Fetch tags from Danbooru
-          </label>
-          <p class="help">
-            Automatically look up and apply tags from Danbooru using each file's MD5 hash.
-          </p>
-        </div>
+        <PageHeader
+          title="Upload"
+          :meta="`${store.totalMedia.toLocaleString()} items in gallery`"
+        />
 
         <!-- Drop Zone -->
         <div
@@ -364,6 +390,16 @@ async function uploadFiles() {
             <p class="is-size-7 has-text-grey-light mt-1">Images, GIFs, and videos up to 500 MB</p>
           </div>
         </div>
+
+        <!-- Attached to the drop zone rather than floating above it, since it
+             changes what happens to the files you're about to drop. -->
+        <label class="checkbox fetch-tags">
+          <input v-model="fetchTags" type="checkbox" />
+          <span>
+            Fetch tags from Danbooru
+            <span class="fetch-tags-hint">— looks each file up by its MD5 hash on upload</span>
+          </span>
+        </label>
 
         <!-- File List -->
         <div v-if="hasFiles" class="mt-5">
@@ -459,33 +495,14 @@ async function uploadFiles() {
           </div>
         </div>
 
-        <!-- Upload Results Summary -->
-        <div
-          v-if="uploadResults.length > 0 && !uploading && selectedFiles.length === 0"
+        <AppAlert
+          v-if="uploadSummary"
+          :severity="uploadSummary.severity"
+          :title="uploadSummary.title"
           class="mt-5"
         >
-          <div
-            v-if="uploadResults.every((r) => r.status === 'success')"
-            class="notification is-success is-light"
-          >
-            <p>
-              <span class="icon"><i class="fa-solid fa-circle-check" /></span>
-              All files uploaded successfully!
-            </p>
-          </div>
-          <div
-            v-else-if="uploadResults.some((r) => r.status === 'duplicate')"
-            class="notification is-warning is-light"
-          >
-            <p>
-              <span class="icon"><i class="fa-solid fa-circle-check" /></span>
-              Upload complete.
-              {{ uploadResults.filter((r) => r.status === 'success').length }} uploaded,
-              {{ uploadResults.filter((r) => r.status === 'duplicate').length }} duplicate(s)
-              skipped.
-            </p>
-          </div>
-        </div>
+          {{ uploadSummary.message }}
+        </AppAlert>
       </template>
     </div>
   </section>
@@ -493,9 +510,9 @@ async function uploadFiles() {
 
 <style scoped>
 .drop-zone {
-  border: 2px dashed #4a4a4a;
-  border-radius: 8px;
-  padding: 3rem 2rem;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--r-lg);
+  padding: var(--sp-6) var(--sp-5);
   text-align: center;
   cursor: pointer;
   transition:
@@ -504,14 +521,26 @@ async function uploadFiles() {
 }
 
 .drop-zone:hover {
-  border-color: #485fc7;
-  background: rgba(72, 95, 199, 0.05);
+  border-color: var(--text-3);
+  background: var(--surface-1);
 }
 
 .drop-zone.is-drag-over {
-  border-color: #48c78e;
-  background: rgba(72, 199, 142, 0.08);
+  border-color: var(--success);
+  background: var(--success-soft);
   border-style: solid;
+}
+
+.fetch-tags {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  font-size: var(--t-md);
+}
+
+.fetch-tags-hint {
+  color: var(--text-3);
 }
 
 .drop-zone-content {
@@ -519,7 +548,7 @@ async function uploadFiles() {
 }
 
 .file-list {
-  border: 1px solid #363636;
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -529,7 +558,7 @@ async function uploadFiles() {
   align-items: center;
   justify-content: space-between;
   padding: 0.6rem 1rem;
-  border-bottom: 1px solid #363636;
+  border-bottom: 1px solid var(--border);
 }
 
 .file-item:last-child {

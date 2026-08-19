@@ -96,17 +96,15 @@ final class StructureTest extends TestCase
     public function testTagCategoryDefaultsAndAccessors(): void
     {
         $cat = new TagCategory();
-        $this->assertSame('white', $cat->color);
+        $this->assertSame('neutral', $cat->color);
         $this->assertSame(0, $cat->sort_order);
 
         $cat->setCategoryName('Character')
-            ->setCategoryShort('char')
             ->setColor('teal')
             ->setSortOrder(2)
             ->setDescription('People');
 
         $this->assertSame('Character', $cat->category_name);
-        $this->assertSame('char', $cat->category_short);
         $this->assertSame('teal', $cat->color);
         $this->assertSame(2, $cat->sort_order);
         $this->assertSame('People', $cat->description);
@@ -118,7 +116,7 @@ final class StructureTest extends TestCase
         $data = $cat->jsonSerialize();
 
         $this->assertSame(
-            ['category_id', 'category_name', 'category_short', 'color', 'description', 'sort_order'],
+            ['category_id', 'category_name', 'color', 'description', 'sort_order'],
             array_keys($data)
         );
         $this->assertSame(1, $data['category_id']);

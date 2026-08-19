@@ -1,0 +1,32 @@
+# Line endings.
+#
+# The repository stores LF, and every tool in the gate expects LF: phpcs PSR-12
+# fails a file outright on "End of line character is invalid", and Prettier
+# rewrites CRLF on sight. Windows checkouts, however, get CRLF from
+# core.autocrlf=true — so `composer lint` failed on 34 files nobody had edited,
+# and `git checkout` kept undoing what Prettier had just fixed.
+#
+# `eol=lf` overrides core.autocrlf, so this holds regardless of each developer's
+# global git config, and no per-machine setup is required.
+* text=auto eol=lf
+
+# Nothing here needs CRLF today (no .bat/.cmd exist). If one is ever added it
+# must opt out, because cmd.exe mis-parses LF-terminated batch files:
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets: excluded explicitly rather than relying on content detection,
+# so a stray text-looking header can never get "normalised" into corruption.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.mp4 binary
+*.webm binary
+*.db binary

@@ -28,8 +28,14 @@ app.config.errorHandler = (err, _instance, info) => {
 
 app.mount('#app')
 
-// Register the service worker for thumbnail caching and prefetch
-if ('serviceWorker' in navigator) {
+// Register the service worker for thumbnail caching and prefetch.
+//
+// Production only. Registering it against the dev server means a worker that
+// caches `/assets/*` cache-first sits in front of Vite, so what you see after an
+// edit depends on which copy the worker hands back — and it keeps controlling
+// the page across reloads, which makes local debugging unreliable in a way
+// that's easy to mistake for an app bug.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((err: unknown) => {
       console.warn('SW registration failed:', err)

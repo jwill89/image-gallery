@@ -17,8 +17,8 @@ duplicate detection, favorites, and admin-gated uploads.
 
 - **Unified media** — images, animated GIFs, and videos in one browsable grid,
   with pagination or infinite scroll.
-- **Tagging** — categories (with colors, shortcodes, descriptions) and
-  **implications** (tag A auto-applies tag B, transitively).
+- **Tagging** — categories (with colors and descriptions) and **implications**
+  (tag A auto-applies tag B, transitively).
 - **Search** — filter by multiple tags, including exclusions (`-tag`).
 - **Danbooru import** — auto-fetch tags by MD5 hash with an IQDB visual-similarity
   fallback; import rules are editable in the UI.

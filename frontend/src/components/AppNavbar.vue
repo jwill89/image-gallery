@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useGalleryStore } from '../stores/gallery'
 import { useApi, hasAuthToken, clearAuthToken } from '../composables/useApi'
@@ -7,7 +7,11 @@ import { useFavoritesStore } from '../stores/favorites'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
 import type { Media } from '../types'
+import { ToolbarRoot, ToolbarButton, Toggle } from 'reka-ui'
 import TagSearchInput from './TagSearchInput.vue'
+import AppMenu from './AppMenu.vue'
+import AppMenuItem from './AppMenuItem.vue'
+import AppTooltip from './AppTooltip.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -20,6 +24,20 @@ const burgerActive = ref(false)
 const selectedTags = ref<string[]>([])
 const perPage = ref(40)
 const authenticated = ref(hasAuthToken())
+
+// The bar is opaque, so nothing shows through it — but with infinite scroll the
+// media passes underneath continuously, and a flat 1px border isn't enough
+// separation at the moment a bright thumbnail slides under. Elevation is added
+// only once there's something to sit above.
+const scrolled = ref(false)
+function onWindowScroll() {
+  scrolled.value = window.scrollY > 4
+}
+onMounted(() => {
+  window.addEventListener('scroll', onWindowScroll, { passive: true })
+  onWindowScroll()
+})
+onUnmounted(() => window.removeEventListener('scroll', onWindowScroll))
 
 // A media detail page reached via Random lives under the `/random/media/...`
 // route (name `media-random`), so it counts as the Random destination.
@@ -37,23 +55,39 @@ const isTagsActive = computed(() => {
     name === 'tag-implications'
   )
 })
-const isUploadActive = computed(() => route.name === 'upload')
 const isFavoritesActive = computed(() => route.name === 'favorites')
-const isDetailView = computed(() => route.name === 'media-tags' || route.name === 'media-random')
-// Admin utility pages (Upload, Duplicates) render no browsable media grid.
-const isAdminUtilityPage = computed(() => route.name === 'upload' || route.name === 'duplicates')
-
-// Blur only affects media thumbnails, so hide the toggle where none are shown:
-// the tag-management section and the admin utility pages.
-const showBlurToggle = computed(() => !isTagsActive.value && !isAdminUtilityPage.value)
-// Infinite-scroll and items-per-page only affect gallery listings; hide them on
-// the single-item detail view, the self-paginating tag tables, and the admin
-// utility pages.
-const showListControls = computed(
-  () => !isDetailView.value && !isTagsActive.value && !isAdminUtilityPage.value,
-)
-const isDupesActive = computed(() => route.name === 'duplicates')
 const isLoginActive = computed(() => route.name === 'login')
+// Upload and Duplicates no longer have their own nav items — they live in the
+// account menu, so there's nothing to mark as selected.
+
+// Declared per route rather than derived from a chain of negations — that chain
+// is why the per-page select and infinite-scroll toggle rendered, live and
+// clickable, on /favorites (which has no pagination) and on the 404 page.
+const showBlurToggle = computed(() => route.meta.showBlur === true)
+const showViewMode = computed(() => route.meta.showViewMode === true)
+
+/**
+ * Items-per-page and infinite scroll were two controls expressing one decision,
+ * so they're one control now. `0` is the continuous sentinel in the select only
+ * — the store still holds the real boolean.
+ */
+const blurPressed = computed({
+  get: () => store.blurThumbnails,
+  set: () => store.toggleBlur(),
+})
+
+const CONTINUOUS = 0
+const viewMode = computed({
+  get: () => (store.infiniteScroll ? CONTINUOUS : perPage.value),
+  set: (value: number) => {
+    const wantContinuous = value === CONTINUOUS
+    if (wantContinuous !== store.infiniteScroll) store.toggleInfiniteScroll()
+    if (!wantContinuous) {
+      perPage.value = value
+      onPerPageChange()
+    }
+  },
+})
 
 function navigateMedia() {
   selectedTags.value = []
@@ -173,8 +207,9 @@ router.afterEach((to) => {
   }
   if (to.params.perPage !== '') {
     const pp = Number(to.params.perPage)
-    // Guard against stale/invalid values (e.g. the legacy `0` = infinite-scroll
-    // sentinel, now a separate toggle) so the select doesn't render blank.
+    // `0` in the URL is a stale value from when it meant infinite scroll; the
+    // mode now lives in the store, and `0` only exists as the select's sentinel.
+    // Falling back to 40 keeps the select from rendering blank.
     perPage.value = isNaN(pp) || pp < 1 ? 40 : pp
   }
 })
@@ -182,7 +217,8 @@ router.afterEach((to) => {
 
 <template>
   <nav
-    class="navbar has-background-black-ter is-fixed-top"
+    class="navbar is-fixed-top"
+    :class="{ 'is-scrolled': scrolled }"
     role="navigation"
     aria-label="main-menu"
   >
@@ -202,27 +238,24 @@ router.afterEach((to) => {
       </a>
     </div>
 
+    <!-- Only the destination links collapse into the burger. -->
     <div class="navbar-menu" :class="{ 'is-active': burgerActive }">
       <div class="navbar-start">
-        <!-- Media -->
         <a class="navbar-item" :class="{ 'is-selected': isMediaActive }" @click="navigateMedia">
           <span class="icon"><i class="fa-solid fa-images" /></span>
           <span>Media</span>
         </a>
 
-        <!-- Random -->
         <a class="navbar-item" :class="{ 'is-selected': isRandomActive }" @click="navigateRandom">
           <span class="icon"><i class="fa-solid fa-shuffle" /></span>
           <span>Random</span>
         </a>
 
-        <!-- Tags -->
         <a class="navbar-item" :class="{ 'is-selected': isTagsActive }" @click="navigateTags">
           <span class="icon"><i class="fa-solid fa-tags" /></span>
           <span>Tags</span>
         </a>
 
-        <!-- Favorites -->
         <a
           class="navbar-item"
           :class="{ 'is-selected': isFavoritesActive }"
@@ -234,111 +267,139 @@ router.afterEach((to) => {
             favorites.count
           }}</span>
         </a>
-
-        <!-- Admin items -->
-        <template v-if="authenticated">
-          <a class="navbar-item" :class="{ 'is-selected': isUploadActive }" @click="navigateUpload">
-            <span class="icon"><i class="fa-solid fa-cloud-arrow-up" /></span>
-            <span>Upload</span>
-          </a>
-          <a class="navbar-item" :class="{ 'is-selected': isDupesActive }" @click="navigateDupes">
-            <span class="icon"><i class="fa-solid fa-clone" /></span>
-            <span>Duplicates</span>
-          </a>
-        </template>
       </div>
+    </div>
 
-      <div class="navbar-end">
-        <div v-if="showBlurToggle" class="navbar-item">
-          <button
-            class="button"
-            :class="{ 'is-success': store.blurThumbnails }"
-            :aria-pressed="store.blurThumbnails"
-            aria-label="Toggle thumbnail blur"
-            @click="store.toggleBlur"
-          >
-            Blur: {{ store.blurThumbnails ? 'On' : 'Off' }}
-          </button>
-        </div>
-
-        <div v-if="showListControls" class="navbar-item">
-          <button
-            class="button"
-            :class="{ 'is-success': store.infiniteScroll }"
-            :aria-pressed="store.infiniteScroll"
-            aria-label="Toggle infinite scroll"
-            title="When on, load pages continuously as you scroll (disables items-per-page)"
-            @click="store.toggleInfiniteScroll"
-          >
-            Infinite Scroll: {{ store.infiniteScroll ? 'On' : 'Off' }}
-          </button>
-        </div>
-
-        <div v-if="showListControls" class="navbar-item">
-          <div class="field">
-            <div class="control has-icons-left">
-              <div class="select">
-                <select
-                  v-model.number="perPage"
-                  title="Items Per-Page"
-                  aria-label="Items per page"
-                  :disabled="store.infiniteScroll"
-                  @change="onPerPageChange"
-                >
-                  <option :value="15">15 Items Per-Page</option>
-                  <option :value="30">30 Items Per-Page</option>
-                  <option :value="40">40 Items Per-Page</option>
-                  <option :value="60">60 Items Per-Page</option>
-                  <option :value="100">100 Items Per-Page</option>
-                </select>
-              </div>
-              <div class="icon is-left">
-                <i class="fa-solid fa-table" />
-              </div>
-            </div>
+    <!-- Deliberately a sibling of `.navbar-menu`, not a child: Bulma hides the
+         menu below 1024px, which is how search — the primary tool for a
+         5,000-item library — ended up two taps deep inside the burger.
+         Roving tabindex makes the whole cluster one tab stop. -->
+    <ToolbarRoot class="nav-toolbar" aria-label="View and search controls">
+      <div class="navbar-item nav-search">
+        <div class="field has-addons">
+          <div class="control">
+            <TagSearchInput v-model="selectedTags" @search="searchWithTags" @reset="resetSearch" />
           </div>
-        </div>
-
-        <div class="navbar-item">
-          <div class="field has-addons">
-            <div class="control">
-              <TagSearchInput
-                v-model="selectedTags"
-                @search="searchWithTags"
-                @reset="resetSearch"
-              />
-            </div>
-            <div class="control">
-              <button
+          <div class="control">
+            <AppTooltip label="Show only untagged media">
+              <ToolbarButton
                 class="button"
                 :class="{ 'is-warning': isUntaggedActive }"
-                title="Show untagged media"
                 aria-label="Show untagged media"
                 :aria-pressed="isUntaggedActive"
                 @click="searchUntagged"
               >
                 <span class="icon"><i class="fa-solid fa-ban" /></span>
-              </button>
-            </div>
+              </ToolbarButton>
+            </AppTooltip>
           </div>
         </div>
+      </div>
 
-        <div class="navbar-item">
-          <button v-if="authenticated" class="button is-danger" @click="logout">
-            <span class="icon"><i class="fa-solid fa-right-from-bracket" /></span>
-            <span>Logout</span>
-          </button>
-          <button
-            v-else
-            class="button is-primary"
-            :class="{ 'is-selected': isLoginActive }"
-            @click="navigateLogin"
-          >
-            <span class="icon"><i class="fa-solid fa-right-to-bracket" /></span>
-            <span>Admin Login</span>
-          </button>
+      <div v-if="showBlurToggle" class="navbar-item">
+        <AppTooltip :label="store.blurThumbnails ? 'Unblur thumbnails' : 'Blur thumbnails'">
+          <!-- Toggle, not Switch: this is a toolbar button that stays
+                 pressed (`aria-pressed`), not a settings-form control. It stays
+                 in the bar at every width — it's the one control you reach for
+                 in a hurry. -->
+          <Toggle v-model="blurPressed" class="button nav-toggle" aria-label="Blur thumbnails">
+            <span class="icon">
+              <i :class="store.blurThumbnails ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'" />
+            </span>
+            <span class="nav-toggle-label">Blur</span>
+          </Toggle>
+        </AppTooltip>
+      </div>
+
+      <div v-if="showViewMode" class="navbar-item nav-viewmode">
+        <div class="select">
+          <select v-model.number="viewMode" aria-label="How many items to show">
+            <option :value="15">15 per page</option>
+            <option :value="30">30 per page</option>
+            <option :value="40">40 per page</option>
+            <option :value="60">60 per page</option>
+            <option :value="100">100 per page</option>
+            <option :value="0">Continuous scroll</option>
+          </select>
         </div>
       </div>
-    </div>
+
+      <div class="navbar-item">
+        <!-- Admin destinations and sign-out live behind the account menu, so
+               the nav doesn't change shape when you sign in and Logout stops
+               being the loudest thing on screen. -->
+        <AppMenu v-if="authenticated" label="Account">
+          <template #trigger><i class="fa-solid fa-user" /></template>
+          <AppMenuItem icon="fa-solid fa-cloud-arrow-up" @select="navigateUpload">
+            Upload
+          </AppMenuItem>
+          <AppMenuItem icon="fa-solid fa-clone" @select="navigateDupes">Duplicates</AppMenuItem>
+          <AppMenuItem icon="fa-solid fa-right-from-bracket" @select="logout">
+            Sign out
+          </AppMenuItem>
+        </AppMenu>
+        <ToolbarButton
+          v-else
+          class="button"
+          :class="{ 'is-selected': isLoginActive }"
+          @click="navigateLogin"
+        >
+          <span class="icon"><i class="fa-solid fa-right-to-bracket" /></span>
+          <span class="nav-login-label">Admin</span>
+        </ToolbarButton>
+      </div>
+    </ToolbarRoot>
   </nav>
 </template>
+
+<style scoped>
+.nav-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  padding-right: var(--sp-2);
+  min-width: 0;
+}
+
+.nav-toolbar .navbar-item {
+  padding: 0;
+}
+
+.nav-search {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* Keyed off `aria-pressed`, not `data-state`: AppTooltip wraps this with
+   `as-child`, so TooltipTrigger merges its own `data-state` (open/closed) onto
+   the same element and clobbers Toggle's on/off. `aria-pressed` is untouched
+   and is the accessible source of truth anyway. */
+.nav-toggle[aria-pressed='true'] {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+
+/* Below Bulma's navbar breakpoint the labels go but the controls stay —
+   search and blur are the two you reach for constantly. */
+@media screen and (max-width: 1023px) {
+  .nav-toolbar {
+    flex: 1 1 auto;
+    padding-right: var(--sp-1);
+  }
+  .nav-toggle-label,
+  .nav-login-label {
+    display: none;
+  }
+  .nav-viewmode {
+    display: none;
+  }
+}
+</style>

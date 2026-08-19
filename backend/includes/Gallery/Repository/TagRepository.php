@@ -25,12 +25,10 @@ class TagRepository
     private const string OBJ_CLASS = Tag::class;
 
     private PDO $db;
-    private TagCategoryRepository $categoryRepository;
 
-    public function __construct(PDO $db, TagCategoryRepository $categoryRepository)
+    public function __construct(PDO $db)
     {
         $this->db = $db;
-        $this->categoryRepository = $categoryRepository;
     }
 
     /**
@@ -119,47 +117,6 @@ class TagRepository
         $stmt->execute($ids);
 
         return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
-    }
-
-    /**
-     * Retrieves a tag if it exists, or creates and stores it.
-     *
-     * A "shortcode:name" prefix assigns the tag to the matching category;
-     * otherwise the tag lands in the default category (ID 1).
-     */
-    public function getOrCreate(string $tag_name): Tag
-    {
-        $tag_name = strtolower($tag_name);
-
-        // $name defaults to the full tag name; a "shortcode:name" prefix splits
-        // it into a category shortcode and the bare name. Initializing it up
-        // front keeps it defined on every path (the category branch below only
-        // runs when the colon form set it).
-        $name = $tag_name;
-        $category = null;
-
-        if (str_contains($tag_name, ':')) {
-            [$category_shortcode, $name] = array_map('trim', explode(':', $tag_name, 2));
-            $category = $this->categoryRepository->getByShortcode($category_shortcode);
-        }
-
-        $tag_exists = ($category instanceof TagCategory) ? $this->getByName($name) : $this->getByName($tag_name);
-
-        if ($tag_exists instanceof Tag) {
-            return $tag_exists;
-        }
-
-        $tag = new Tag();
-
-        if ($category instanceof TagCategory) {
-            $tag->setTagName($name)->setCategoryId($category->category_id);
-        } else {
-            $tag->setTagName($tag_name)->setCategoryId(1);
-        }
-
-        $tag->setTagId($this->save($tag));
-
-        return $tag;
     }
 
     /**

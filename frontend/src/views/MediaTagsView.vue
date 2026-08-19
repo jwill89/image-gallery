@@ -10,8 +10,15 @@ import { endpoints } from '../api/endpoints'
 import type { DanbooruFetchResult, Media, Tag } from '../types'
 import TagMultiSelect from '../components/TagMultiSelect.vue'
 import TagBadge from '../components/TagBadge.vue'
-import TagShortcodeModal from '../components/TagShortcodeModal.vue'
+import TagCategoryLegend from '../components/TagCategoryLegend.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import EmptyState from '../components/EmptyState.vue'
+import AppAlert from '../components/AppAlert.vue'
+import AppDialog from '../components/AppDialog.vue'
+import AppLightbox from '../components/AppLightbox.vue'
+import AppTooltip from '../components/AppTooltip.vue'
+import AppMenu from '../components/AppMenu.vue'
+import AppMenuItem from '../components/AppMenuItem.vue'
 
 const props = defineProps<{
   mediaId: number
@@ -28,7 +35,7 @@ const { tags, mediaItem, loading, loadFailed, fetchMediaAndTags, addTags, remove
 
 const showHelpModal = ref(false)
 const showDeleteModal = ref(false)
-const menuOpen = ref(false)
+const showLightbox = ref(false)
 const deleting = ref(false)
 const authenticated = ref(hasAuthToken())
 const mediaUrl = ref('')
@@ -40,9 +47,15 @@ const showDanbooruModal = ref(false)
 const danbooruMode = ref<'auto' | 'post_id'>('auto')
 const danbooruPostId = ref('')
 const danbooruFetching = ref(false)
-const danbooruResult = ref<{ method: string; tags_applied: number; tags_created: number } | null>(
-  null,
-)
+/** Field validation — belongs beside the input, as `.help.is-danger`. */
+const postIdError = ref('')
+/**
+ * Import failure — stays in the dialog that caused it, so the reason is still
+ * on screen while you change the lookup method and retry. The server's messages
+ * here are a sentence or two (credentials, IP allowlist, rate limit), which is
+ * more than a toast should carry. Success is the opposite case: the dialog has
+ * done its job, so it reports through the toast like every other action.
+ */
 const danbooruError = ref('')
 
 // Touch/swipe state
@@ -89,13 +102,28 @@ const groupedTags = computed(() => {
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 })
 
+/**
+ * Short enough to sit on the metadata line without truncating. The full
+ * timestamp — weekday, seconds and timezone included — moves to the `title`,
+ * so the precision is still there on demand rather than clipped off the edge.
+ */
 const formattedDate = computed(() => {
   if (!mediaItem.value?.file_time) return ''
-  const date = new Date(mediaItem.value.file_time * 1000)
-  return date.toLocaleString(undefined, {
-    weekday: 'short',
+  return new Date(mediaItem.value.file_time * 1000).toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+})
+
+const fullDate = computed(() => {
+  if (!mediaItem.value?.file_time) return ''
+  return new Date(mediaItem.value.file_time * 1000).toLocaleString(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
@@ -205,17 +233,11 @@ async function copyHash() {
   }
 }
 
-function closeMenu() {
-  menuOpen.value = false
-}
-
 function onFetchTagsClick() {
-  closeMenu()
   openDanbooruModal()
 }
 
 function onDeleteClick() {
-  closeMenu()
   showDeleteModal.value = true
 }
 
@@ -287,14 +309,14 @@ async function deleteMedia() {
 function openDanbooruModal() {
   danbooruMode.value = 'auto'
   danbooruPostId.value = ''
-  danbooruResult.value = null
+  postIdError.value = ''
   danbooruError.value = ''
   showDanbooruModal.value = true
 }
 
 async function fetchDanbooruTags() {
   danbooruFetching.value = true
-  danbooruResult.value = null
+  postIdError.value = ''
   danbooruError.value = ''
 
   try {
@@ -302,7 +324,7 @@ async function fetchDanbooruTags() {
     if (danbooruMode.value === 'post_id') {
       const id = parseInt(danbooruPostId.value.trim(), 10)
       if (!id || id <= 0) {
-        danbooruError.value = 'Please enter a valid Danbooru post ID.'
+        postIdError.value = 'Please enter a valid Danbooru post ID.'
         danbooruFetching.value = false
         return
       }
@@ -317,13 +339,15 @@ async function fetchDanbooruTags() {
 
     tags.value = data.tags
     store.allTags = data.all_tags
-    danbooruResult.value = {
-      method: data.method,
-      tags_applied: data.tags_applied,
-      tags_created: data.tags_created,
-    }
-    toastStore.success(`Imported ${data.tags_applied} tags from Danbooru (via ${data.method}).`)
+    const created = data.tags_created > 0 ? ` ${data.tags_created} newly created.` : ''
+    toastStore.success(
+      `Applied ${data.tags_applied} tag(s) via ${data.method}.${created}`,
+      4000,
+      'Danbooru Import',
+    )
   } catch (e) {
+    // Reported in the dialog, not as a toast — one message, in the place you
+    // can act on it.
     danbooruError.value = getErrorMessage(e, 'Failed to fetch tags from Danbooru.')
   } finally {
     danbooruFetching.value = false
@@ -340,12 +364,9 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown)
-  // Close the overflow menu on any outside click (the trigger stops propagation).
-  window.addEventListener('click', closeMenu)
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
-  window.removeEventListener('click', closeMenu)
 })
 
 // ── Touch/swipe navigation for mobile ──────────────────────
@@ -383,22 +404,20 @@ function onTouchEnd(e: TouchEvent) {
   <section class="section">
     <div class="container is-wide">
       <LoadingSpinner v-if="loading && !mediaItem" />
-      <div v-else-if="loadFailed && !mediaItem" class="has-text-centered py-6">
-        <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-circle-exclamation fa-3x" />
-        </span>
-        <p class="is-size-5 has-text-grey mt-4">Could not load media details.</p>
-        <div class="buttons is-centered mt-4">
-          <button class="button is-indigo" @click="load">
-            <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
-            <span>Retry</span>
-          </button>
-          <button class="button is-indigo is-outlined" @click="backToGallery">
-            <span class="icon"><i class="fa-solid fa-backward" /></span>
-            <span>Back to Gallery</span>
-          </button>
-        </div>
-      </div>
+      <EmptyState
+        v-else-if="loadFailed && !mediaItem"
+        icon="fa-solid fa-circle-exclamation"
+        title="Could not load media details."
+      >
+        <button class="button" @click="load">
+          <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
+          <span>Retry</span>
+        </button>
+        <button class="button is-ghost" @click="backToGallery">
+          <span class="icon"><i class="fa-solid fa-backward" /></span>
+          <span>Back to Gallery</span>
+        </button>
+      </EmptyState>
       <template v-else>
         <div class="columns">
           <div class="column is-three-fifths">
@@ -423,15 +442,25 @@ function onTouchEnd(e: TouchEvent) {
                 ]"
                 @loadeddata="mediaReady = true"
               />
+              <!-- Enlarging the media is the primary verb on this page, but it
+                   used to be a text link buried in the metadata table. Videos
+                   keep their own controls, so only images open the lightbox. -->
               <img
                 v-else-if="mediaUrl"
                 :src="mediaUrl"
                 :alt="mediaAltText"
                 :class="[
                   'media-fade',
+                  'is-zoomable',
                   { 'is-loaded': mediaReady, 'thumb-blur': store.blurThumbnails },
                 ]"
+                role="button"
+                tabindex="0"
+                :aria-label="`Enlarge ${mediaAltText}`"
                 @load="mediaReady = true"
+                @click="showLightbox = true"
+                @keydown.enter.prevent="showLightbox = true"
+                @keydown.space.prevent="showLightbox = true"
               />
             </figure>
           </div>
@@ -440,41 +469,45 @@ function onTouchEnd(e: TouchEvent) {
             <!-- Toolbar: navigation on the left, actions on the right -->
             <div class="media-toolbar">
               <div class="toolbar-nav">
-                <button v-if="isRandomView" class="button is-indigo" @click="newRandom">
+                <button v-if="isRandomView" class="button" @click="newRandom">
                   <span class="icon"><i class="fa-solid fa-shuffle" /></span>
                   <span>New Random Media</span>
                 </button>
-                <button v-else class="button is-indigo" @click="backToGallery">
+                <button v-else class="button" @click="backToGallery">
                   <span class="icon"><i class="fa-solid fa-backward" /></span>
                   <span>Back</span>
                 </button>
                 <div v-if="hasGalleryContext" class="field has-addons mb-0">
                   <div class="control">
-                    <button
-                      class="button is-indigo"
-                      :disabled="prevId == null"
-                      title="Previous (← or swipe right)"
-                      @click="navigatePrev"
-                    >
-                      <span class="icon"><i class="fa-solid fa-arrow-left" /></span>
-                    </button>
+                    <AppTooltip label="Previous (← or swipe right)">
+                      <button
+                        class="button"
+                        :disabled="prevId == null"
+                        aria-label="Previous media"
+                        @click="navigatePrev"
+                      >
+                        <span class="icon"><i class="fa-solid fa-arrow-left" /></span>
+                      </button>
+                    </AppTooltip>
                   </div>
                   <div class="control">
-                    <button
-                      class="button is-indigo"
-                      :disabled="nextId == null"
-                      title="Next (→ or swipe left)"
-                      @click="navigateNext"
-                    >
-                      <span class="icon"><i class="fa-solid fa-arrow-right" /></span>
-                    </button>
+                    <AppTooltip label="Next (→ or swipe left)">
+                      <button
+                        class="button"
+                        :disabled="nextId == null"
+                        aria-label="Next media"
+                        @click="navigateNext"
+                      >
+                        <span class="icon"><i class="fa-solid fa-arrow-right" /></span>
+                      </button>
+                    </AppTooltip>
                   </div>
                 </div>
               </div>
               <div class="toolbar-actions">
                 <button
                   class="button"
-                  :class="favorites.isFavorite(mediaId) ? 'is-pink' : 'is-dark'"
+                  :class="{ 'is-fav': favorites.isFavorite(mediaId) }"
                   :aria-pressed="favorites.isFavorite(mediaId)"
                   :title="
                     favorites.isFavorite(mediaId) ? 'Remove from favorites' : 'Add to favorites'
@@ -493,86 +526,62 @@ function onTouchEnd(e: TouchEvent) {
 
                 <!-- Less-used / destructive admin actions live behind an overflow
                      menu so they're not one stray click away. -->
-                <div
-                  v-if="authenticated"
-                  class="dropdown is-right"
-                  :class="{ 'is-active': menuOpen }"
-                >
-                  <div class="dropdown-trigger">
-                    <button
-                      class="button is-indigo"
-                      aria-haspopup="true"
-                      aria-controls="media-actions-menu"
-                      title="More actions"
-                      @click.stop="menuOpen = !menuOpen"
-                    >
-                      <span class="icon"><i class="fa-solid fa-ellipsis-vertical" /></span>
-                    </button>
-                  </div>
-                  <div id="media-actions-menu" class="dropdown-menu" role="menu">
-                    <div class="dropdown-content">
-                      <a class="dropdown-item" @click="onFetchTagsClick">
-                        <span class="icon"><i class="fa-solid fa-cloud-arrow-down" /></span>
-                        <span>Fetch Tags</span>
-                      </a>
-                      <hr class="dropdown-divider" />
-                      <a class="dropdown-item has-text-danger" @click="onDeleteClick">
-                        <span class="icon"><i class="fa-solid fa-trash" /></span>
-                        <span>Delete Media</span>
-                      </a>
-                    </div>
-                  </div>
-                </div>
+                <AppMenu v-if="authenticated" label="More actions">
+                  <AppMenuItem icon="fa-solid fa-cloud-arrow-down" @select="onFetchTagsClick">
+                    Fetch Tags…
+                  </AppMenuItem>
+                  <AppMenuItem icon="fa-solid fa-trash" danger @select="onDeleteClick">
+                    Delete Media…
+                  </AppMenuItem>
+                </AppMenu>
               </div>
             </div>
 
-            <!-- Media Details -->
-            <h2 class="title is-5">Media Details</h2>
-            <table class="table is-narrow is-fullwidth">
-              <tbody>
-                <tr>
-                  <th>Date Added</th>
-                  <td>{{ formattedDate }}</td>
-                </tr>
-                <tr v-if="dimensions">
-                  <th>Dimensions</th>
-                  <td>{{ dimensions }}</td>
-                </tr>
-                <tr v-if="formattedDuration">
-                  <th>Duration</th>
-                  <td>{{ formattedDuration }}</td>
-                </tr>
-                <tr v-if="formattedFileSize">
-                  <th>File Size</th>
-                  <td>{{ formattedFileSize }}</td>
-                </tr>
-                <tr>
-                  <th>MD5 Hash</th>
-                  <td>
-                    <span class="hash-cell">
-                      <code>{{ mediaItem?.hash }}</code>
-                      <button
-                        class="button is-indigo is-small hash-copy"
-                        title="Copy MD5 hash"
-                        aria-label="Copy MD5 hash"
-                        @click="copyHash"
-                      >
-                        <span class="icon is-small"><i class="fa-regular fa-copy" /></span>
-                      </button>
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <th>Full Media</th>
-                  <td>
-                    <a :href="fullPath" target="_blank"
-                      >View Full {{ isVideoItem ? 'Video' : 'Image' }}
-                      <i class="fa-solid fa-up-right-from-square fa-xs"
-                    /></a>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <!-- Six facts don't need a bordered grid. As a table this had no
+                 `.table-container`, so on a 375px screen the date lost its
+                 timezone and the copy button sat outside the viewport. -->
+            <dl class="media-meta">
+              <div v-if="dimensions" class="media-meta-item">
+                <dt>Dimensions</dt>
+                <dd>{{ dimensions }}</dd>
+              </div>
+              <div v-if="formattedDuration" class="media-meta-item">
+                <dt>Duration</dt>
+                <dd>{{ formattedDuration }}</dd>
+              </div>
+              <div v-if="formattedFileSize" class="media-meta-item">
+                <dt>Size</dt>
+                <dd>{{ formattedFileSize }}</dd>
+              </div>
+              <div class="media-meta-item">
+                <dt>Added</dt>
+                <dd :title="fullDate">{{ formattedDate }}</dd>
+              </div>
+              <div class="media-meta-item is-hash">
+                <dt>MD5</dt>
+                <dd>
+                  <code>{{ mediaItem?.hash }}</code>
+                  <AppTooltip label="Copy MD5 hash">
+                    <button
+                      class="button is-ghost is-small hash-copy"
+                      aria-label="Copy MD5 hash"
+                      @click="copyHash"
+                    >
+                      <span class="icon is-small"><i class="fa-regular fa-copy" /></span>
+                    </button>
+                  </AppTooltip>
+                </dd>
+              </div>
+              <div class="media-meta-item">
+                <dt>File</dt>
+                <dd>
+                  <a :href="fullPath" target="_blank"
+                    >Open full {{ isVideoItem ? 'video' : 'image' }}
+                    <i class="fa-solid fa-up-right-from-square fa-xs"
+                  /></a>
+                </dd>
+              </div>
+            </dl>
 
             <hr />
 
@@ -604,7 +613,7 @@ function onTouchEnd(e: TouchEvent) {
               to read more about tag categories, differentiated by colors.
             </p>
 
-            <TagShortcodeModal v-if="showHelpModal" class="mt-3" @close="showHelpModal = false" />
+            <TagCategoryLegend v-if="showHelpModal" class="mt-3" @close="showHelpModal = false" />
 
             <hr />
 
@@ -629,138 +638,123 @@ function onTouchEnd(e: TouchEvent) {
         </div>
       </template>
 
-      <!-- Delete Confirmation Modal -->
-      <div class="modal" :class="{ 'is-active': showDeleteModal }">
-        <div class="modal-background" @click="showDeleteModal = false" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">Confirm Deletion</p>
-            <button class="delete" aria-label="close" @click="showDeleteModal = false" />
-          </header>
-          <section class="modal-card-body">
-            <p>Are you sure you want to permanently delete this media item?</p>
-            <p class="has-text-danger mt-2">
-              <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
-              This action cannot be undone.
-            </p>
-          </section>
-          <footer class="modal-card-foot">
-            <button
-              class="button is-danger"
-              :class="{ 'is-loading': deleting }"
-              :disabled="deleting"
-              @click="deleteMedia"
-            >
-              <span class="icon"><i class="fa-solid fa-trash" /></span>
-              <span>Delete</span>
-            </button>
-            <button class="button" :disabled="deleting" @click="showDeleteModal = false">
-              Cancel
-            </button>
-          </footer>
-        </div>
-      </div>
-      <!-- Danbooru Fetch Modal -->
-      <div class="modal" :class="{ 'is-active': showDanbooruModal }">
-        <div class="modal-background" @click="showDanbooruModal = false" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">
-              <strong>Fetch Danbooru Tags</strong>
-            </p>
-            <button class="delete" aria-label="close" @click="showDanbooruModal = false" />
-          </header>
-          <section class="modal-card-body">
-            <div class="field">
-              <label class="label">Lookup Method</label>
-              <div class="control">
-                <label class="radio mr-4">
-                  <input
-                    v-model="danbooruMode"
-                    type="radio"
-                    value="auto"
-                    :disabled="danbooruFetching"
-                  />
-                  Auto (MD5 + IQDB)
-                </label>
-                <label class="radio">
-                  <input
-                    v-model="danbooruMode"
-                    type="radio"
-                    value="post_id"
-                    :disabled="danbooruFetching"
-                  />
-                  Danbooru Post ID
-                </label>
-              </div>
-            </div>
+      <!-- Full-bleed, chromeless: the image is the content, so the dialog gets
+           out of its way. Escape and the backdrop both close it. -->
+      <AppLightbox
+        v-model:open="showLightbox"
+        :src="mediaUrl"
+        :alt="mediaAltText"
+        :caption="dimensions"
+        :href="fullPath"
+      />
 
-            <div v-if="danbooruMode === 'post_id'" class="field">
-              <label class="label">Post ID</label>
-              <div class="control">
-                <input
-                  v-model="danbooruPostId"
-                  class="input"
-                  type="text"
-                  placeholder="e.g. 1234567"
-                  :disabled="danbooruFetching"
-                  @keyup.enter="fetchDanbooruTags"
-                />
-              </div>
-              <p class="help">
-                Enter the numeric post ID from a Danbooru URL (e.g.
-                <code>danbooru.donmai.us/posts/<strong>1234567</strong></code
-                >).
-              </p>
-            </div>
+      <AppDialog
+        :open="showDeleteModal"
+        title="Delete this media item?"
+        destructive
+        @update:open="showDeleteModal = $event"
+      >
+        <p>This permanently removes the file and its tags.</p>
+        <p class="has-text-danger mt-2">
+          <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
+          This action cannot be undone.
+        </p>
 
-            <div v-if="danbooruMode === 'auto'" class="content">
-              <p class="has-text-grey is-size-7">
-                Will search Danbooru by this media's MD5 hash first. If no match is found, it will
-                try IQDB visual similarity as a fallback.
-              </p>
-            </div>
+        <template #footer>
+          <button
+            class="button is-danger"
+            :class="{ 'is-loading': deleting }"
+            :disabled="deleting"
+            @click="deleteMedia"
+          >
+            <span class="icon"><i class="fa-solid fa-trash" /></span>
+            <span>Delete</span>
+          </button>
+          <button class="button is-ghost" :disabled="deleting" @click="showDeleteModal = false">
+            Cancel
+          </button>
+        </template>
+      </AppDialog>
 
-            <div v-if="danbooruResult" class="notification is-success is-light mt-4">
-              <p>
-                <span class="icon"><i class="fa-solid fa-check" /></span>
-                Found via <strong>{{ danbooruResult.method }}</strong> — applied
-                <strong>{{ danbooruResult.tags_applied }}</strong> tag(s)
-                <template v-if="danbooruResult.tags_created > 0">
-                  (<strong>{{ danbooruResult.tags_created }}</strong> new)
-                </template>
-              </p>
-            </div>
-
-            <div v-if="danbooruError" class="notification is-danger is-light mt-4">
-              <p>
-                <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
-                {{ danbooruError }}
-              </p>
-            </div>
-          </section>
-          <footer class="modal-card-foot">
-            <div class="buttons">
-              <button
-                class="button is-cyan"
-                :class="{ 'is-loading': danbooruFetching }"
+      <AppDialog
+        :open="showDanbooruModal"
+        title="Fetch Danbooru Tags"
+        @update:open="showDanbooruModal = $event"
+      >
+        <div class="field">
+          <label class="label">Lookup Method</label>
+          <div class="control">
+            <label class="radio mr-4">
+              <input
+                v-model="danbooruMode"
+                type="radio"
+                value="auto"
                 :disabled="danbooruFetching"
-                @click="fetchDanbooruTags"
-              >
-                <span class="icon"><i class="fa-solid fa-cloud-arrow-down" /></span>
-                <span>Fetch Tags</span>
-              </button>
-              <button
-                class="button"
+              />
+              Auto (MD5 + IQDB)
+            </label>
+            <label class="radio">
+              <input
+                v-model="danbooruMode"
+                type="radio"
+                value="post_id"
                 :disabled="danbooruFetching"
-                @click="showDanbooruModal = false"
-              >
-                Close
-              </button>
-            </div>
-          </footer>
+              />
+              Danbooru Post ID
+            </label>
+          </div>
         </div>
-      </div>
+
+        <div v-if="danbooruMode === 'post_id'" class="field">
+          <label class="label">Post ID</label>
+          <div class="control">
+            <input
+              v-model="danbooruPostId"
+              class="input"
+              type="text"
+              placeholder="e.g. 1234567"
+              :disabled="danbooruFetching"
+              @keyup.enter="fetchDanbooruTags"
+            />
+          </div>
+          <p v-if="postIdError" class="help is-danger">{{ postIdError }}</p>
+          <p class="help">
+            Enter the numeric post ID from a Danbooru URL (e.g.
+            <code>danbooru.donmai.us/posts/<strong>1234567</strong></code
+            >).
+          </p>
+        </div>
+
+        <div v-if="danbooruMode === 'auto'" class="content">
+          <p class="has-text-grey is-size-7">
+            Will search Danbooru by this media's MD5 hash first. If no match is found, it will try
+            IQDB visual similarity as a fallback.
+          </p>
+        </div>
+
+        <AppAlert v-if="danbooruError" severity="danger" title="Import failed" class="mt-4">
+          {{ danbooruError }}
+        </AppAlert>
+
+        <template #footer>
+          <button
+            class="button is-primary"
+            :class="{ 'is-loading': danbooruFetching }"
+            :disabled="danbooruFetching"
+            @click="fetchDanbooruTags"
+          >
+            <span class="icon"><i class="fa-solid fa-cloud-arrow-down" /></span>
+            <span>Fetch Tags</span>
+          </button>
+          <button
+            class="button is-ghost"
+            :disabled="danbooruFetching"
+            @click="showDanbooruModal = false"
+          >
+            Close
+          </button>
+        </template>
+      </AppDialog>
     </div>
   </section>
 </template>
@@ -782,6 +776,15 @@ function onTouchEnd(e: TouchEvent) {
 
 .media-fade.is-loaded {
   opacity: 1;
+}
+
+.is-zoomable {
+  cursor: zoom-in;
+}
+
+.is-zoomable:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }
 
 /* ── Toolbar layout ───────────────────────────────────────── */
@@ -807,63 +810,82 @@ function onTouchEnd(e: TouchEvent) {
   gap: 0.5rem;
 }
 
-/* ── Overflow menu ────────────────────────────────────────────
-   Single flat surface matching the app's modal panels (#262a36),
-   so the items and the panel read as one consistent background. */
+/* ── Metadata list ────────────────────────────────────────── */
 
-.toolbar-actions .dropdown-content {
-  padding: 0;
-  overflow: hidden;
-  background-color: #262a36;
-  border: 1px solid #363b4e;
-  border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+.media-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0 0 var(--sp-2);
+  font-size: var(--t-sm);
 }
 
-.toolbar-actions .dropdown-item {
-  background-color: transparent;
-  color: #e8eaed;
+.media-meta-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
 }
 
-/* Only the background shifts on hover; the danger item keeps its red text. */
-.toolbar-actions .dropdown-item:hover {
-  background-color: #2e3346;
+.media-meta dt {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  flex: none;
 }
 
-.toolbar-actions .dropdown-divider {
+.media-meta dd {
   margin: 0;
-  background-color: #363b4e;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
 }
 
-/* ── MD5 hash cell ────────────────────────────────────────── */
+/* The hash is the one field long enough to need the whole row. */
+.media-meta-item.is-hash {
+  flex-basis: 100%;
+}
 
-.hash-cell {
-  display: inline-flex;
+.media-meta-item.is-hash dd {
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--sp-2);
+  min-width: 0;
 }
 
-.hash-copy {
-  vertical-align: middle;
+.media-meta-item.is-hash code {
+  overflow-wrap: anywhere;
 }
 
 /* ── Current-tags category groups ─────────────────────────── */
 
 .tag-group + .tag-group {
-  margin-top: 0.75rem;
+  margin-top: var(--sp-3);
 }
 
 .tag-group-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: #b5b5b5;
-  margin-bottom: 0.35rem;
+  color: var(--text-3);
+  margin-bottom: var(--sp-1);
 }
 
 .tag-group .tags {
   margin-bottom: 0;
+}
+
+/* The × is always visible when you can remove tags.
+   Hiding it with `opacity: 0` kept it in the layout, so every chip carried a
+   blank gap and read as oddly wide until you hovered — and because the reveal
+   was bound to the group, hovering one tag lit up every tag in that category.
+   A chip whose width doesn't match its contents is worse than a visible ×. */
+.tag-group .tags :deep(.tag-badge-delete) {
+  opacity: 1;
 }
 
 /* On narrow screens, let the toolbar stack but keep groups intact */

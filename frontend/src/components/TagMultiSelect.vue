@@ -1,8 +1,30 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import {
+  ComboboxRoot,
+  ComboboxAnchor,
+  ComboboxInput,
+  ComboboxPortal,
+  ComboboxContent,
+  ComboboxViewport,
+  ComboboxItem,
+  ComboboxEmpty,
+} from 'reka-ui'
 import { useGalleryStore, type Tag } from '../stores/gallery'
 import { getCategoryClassById } from '../constants/categories'
 
+/**
+ * Tag picker with include/exclude support.
+ *
+ * `modelValue` holds signed tag IDs: a negative ID means the tag is excluded
+ * from the search (rendered struck through, serialised as `-name`).
+ *
+ * The listbox mechanics come from Reka UI's Combobox. The hand-rolled version
+ * closed its dropdown with a 200ms `setTimeout` on blur and exposed no listbox
+ * roles or `aria-activedescendant`, so it raced its own click handler and was
+ * invisible to screen readers. The negation behaviour is ours — Reka has no
+ * concept of a negative selection — so it stays custom.
+ */
 const props = withDefaults(
   defineProps<{
     modelValue: number[]
@@ -22,17 +44,17 @@ const emit = defineEmits<{
 
 const store = useGalleryStore()
 
-const inputText = ref('')
-const showDropdown = ref(false)
-const highlightedIndex = ref(-1)
-const inputRef = ref<HTMLInputElement | null>(null)
+const searchTerm = ref('')
+const open = ref(false)
+
+/** A leading `-` in the input means "add the next pick as an exclusion". */
+const negating = computed(() => searchTerm.value.trimStart().startsWith('-'))
 
 const filteredTags = computed(() => {
-  let query = inputText.value.toLowerCase().trim()
-  // Strip leading '-' for dropdown matching so negation prefix doesn't break search
+  let query = searchTerm.value.toLowerCase().trim()
   if (query.startsWith('-')) query = query.substring(1).trim()
-  const usedIds = new Set([...props.excludeTagIds, ...props.modelValue.map((id) => Math.abs(id))])
 
+  const usedIds = new Set([...props.excludeTagIds, ...props.modelValue.map((id) => Math.abs(id))])
   let results = store.allTags.filter((tag) => !usedIds.has(tag.tag_id))
 
   if (query.length > 0) {
@@ -59,25 +81,20 @@ interface SelectedTag extends Tag {
   negated: boolean
 }
 
-const selectedTagObjects = computed<SelectedTag[]>(() => {
-  return props.modelValue
+const selectedTagObjects = computed<SelectedTag[]>(() =>
+  props.modelValue
     .map((id) => {
       const negated = id < 0
       const tag = store.allTags.find((t) => t.tag_id === Math.abs(id))
       return tag ? { ...tag, negated } : undefined
     })
-    .filter((t): t is SelectedTag => t !== undefined)
-})
+    .filter((t): t is SelectedTag => t !== undefined),
+)
 
-function selectTag(tag: Tag) {
-  // If the user typed a '-' prefix, add as negated (negative ID)
-  const negate = inputText.value.trimStart().startsWith('-')
-  const id = negate ? -tag.tag_id : tag.tag_id
+function onSelectTag(tag: Tag) {
+  const id = negating.value ? -tag.tag_id : tag.tag_id
   emit('update:modelValue', [...props.modelValue, id])
-  inputText.value = ''
-  highlightedIndex.value = -1
-  showDropdown.value = true
-  inputRef.value?.focus()
+  searchTerm.value = ''
 }
 
 function removeTag(signedId: number) {
@@ -94,102 +111,102 @@ function toggleNegate(signedId: number) {
   )
 }
 
-function onInput() {
-  showDropdown.value = true
-  highlightedIndex.value = -1
+/**
+ * Enter submits the search, but only when the listbox isn't offering a choice —
+ * otherwise Reka's own Enter handling should win and pick the highlighted tag.
+ */
+function onEnter() {
+  if (open.value && filteredTags.value.length > 0) return
+  if (props.modelValue.length > 0) emit('submit')
 }
 
-function onFocus() {
-  showDropdown.value = true
-}
-
-function onBlur() {
-  setTimeout(() => {
-    showDropdown.value = false
-  }, 200)
-}
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    highlightedIndex.value = Math.min(highlightedIndex.value + 1, filteredTags.value.length - 1)
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    highlightedIndex.value = Math.max(highlightedIndex.value - 1, -1)
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    if (highlightedIndex.value >= 0 && highlightedIndex.value < filteredTags.value.length) {
-      selectTag(filteredTags.value[highlightedIndex.value])
-    } else if (inputText.value.trim() && filteredTags.value.length > 0) {
-      selectTag(filteredTags.value[0])
-    } else if (props.modelValue.length > 0) {
-      emit('submit')
-    }
-  } else if (e.key === 'Backspace' && inputText.value === '' && props.modelValue.length > 0) {
+function onBackspace() {
+  if (searchTerm.value === '' && props.modelValue.length > 0) {
     emit('update:modelValue', props.modelValue.slice(0, -1))
-  } else if (e.key === 'Escape') {
-    showDropdown.value = false
-    inputRef.value?.blur()
   }
 }
-
-defineExpose({ focus: () => inputRef.value?.focus() })
 </script>
 
 <template>
   <div class="tag-multiselect">
     <div class="field has-addons">
       <div class="control is-expanded">
-        <div class="tag-input-wrapper" @click="inputRef?.focus()">
-          <span
-            v-for="tag in selectedTagObjects"
-            :key="tag.tag_id"
-            class="tag"
-            :class="
-              tag.negated ? 'is-danger is-light tag-negated' : getCategoryClassById(tag.category_id)
-            "
-            :title="
-              tag.negated
-                ? `Excluding: ${tag.tag_name} (right-click to include)`
-                : `Including: ${tag.tag_name} (right-click to exclude)`
-            "
-            @contextmenu.prevent="toggleNegate(tag.negated ? -tag.tag_id : tag.tag_id)"
-          >
-            <template v-if="tag.negated">-</template>{{ tag.tag_name }}
-            <button
-              class="delete is-small"
-              @click.stop="removeTag(tag.negated ? -tag.tag_id : tag.tag_id)"
-            />
-          </span>
-          <input
-            ref="inputRef"
-            v-model="inputText"
-            type="text"
-            class="tag-multiselect-input"
-            :placeholder="placeholder"
-            @input="onInput"
-            @focus="onFocus"
-            @blur="onBlur"
-            @keydown="onKeydown"
-          />
-        </div>
-
-        <div v-show="showDropdown && filteredTags.length > 0" class="tag-dropdown">
-          <div
-            v-for="(tag, idx) in filteredTags"
-            :key="tag.tag_id"
-            class="tag-dropdown-item"
-            :class="{ 'is-highlighted': idx === highlightedIndex }"
-            @mousedown.prevent="selectTag(tag)"
-          >
-            <span class="tag is-small" :class="getCategoryClassById(tag.category_id)">
-              {{ tag.tag_name }}
+        <!-- `model-value` is pinned to null on purpose. Selection lives in this
+             component's own signed-ID array (negatives = excluded), so if the
+             root were allowed to hold a selection the input would render the
+             raw tag_id next to the chip. The filter text is bound on
+             ComboboxInput — ComboboxRoot has no `searchTerm` prop in Reka 2.x. -->
+        <ComboboxRoot
+          v-model:open="open"
+          :model-value="null"
+          :ignore-filter="true"
+          :reset-search-term-on-blur="false"
+          open-on-focus
+          open-on-click
+        >
+          <ComboboxAnchor class="tag-input-wrapper">
+            <span
+              v-for="tag in selectedTagObjects"
+              :key="tag.tag_id"
+              class="tag"
+              :class="
+                tag.negated
+                  ? ['tag--neutral', 'tag-negated']
+                  : getCategoryClassById(tag.category_id)
+              "
+              :title="
+                tag.negated
+                  ? `Excluding: ${tag.tag_name} (right-click to include)`
+                  : `Including: ${tag.tag_name} (right-click to exclude)`
+              "
+              @contextmenu.prevent="toggleNegate(tag.negated ? -tag.tag_id : tag.tag_id)"
+            >
+              <template v-if="tag.negated">-</template>{{ tag.tag_name }}
+              <button
+                type="button"
+                class="delete is-small"
+                :aria-label="`Remove ${tag.tag_name}`"
+                @click.stop="removeTag(tag.negated ? -tag.tag_id : tag.tag_id)"
+              />
             </span>
-          </div>
-          <div v-if="filteredTags.length === 20" class="tag-dropdown-footer">
-            <span class="is-size-7 has-text-grey">Type to filter more results...</span>
-          </div>
-        </div>
+
+            <ComboboxInput
+              v-model="searchTerm"
+              class="tag-multiselect-input"
+              :placeholder="placeholder"
+              @keydown.enter="onEnter"
+              @keydown.backspace="onBackspace"
+            />
+          </ComboboxAnchor>
+
+          <!-- Portalled: this lives inside `nav.navbar`, which is
+               `position: fixed; z-index: 30` and therefore a stacking context —
+               an un-portalled dropdown is trapped beneath the page no matter
+               what z-index it carries. -->
+          <ComboboxPortal>
+            <ComboboxContent class="tag-dropdown" position="popper" align="start" :side-offset="4">
+              <ComboboxViewport>
+                <ComboboxItem
+                  v-for="tag in filteredTags"
+                  :key="tag.tag_id"
+                  class="tag-dropdown-item"
+                  :value="tag.tag_id"
+                  @select="onSelectTag(tag)"
+                >
+                  <span class="tag is-small" :class="getCategoryClassById(tag.category_id)">
+                    {{ tag.tag_name }}
+                  </span>
+                </ComboboxItem>
+
+                <ComboboxEmpty class="tag-dropdown-footer">No matching tags</ComboboxEmpty>
+
+                <div v-if="filteredTags.length === 20" class="tag-dropdown-footer">
+                  Type to filter more results…
+                </div>
+              </ComboboxViewport>
+            </ComboboxContent>
+          </ComboboxPortal>
+        </ComboboxRoot>
       </div>
       <slot name="actions" :selected-count="modelValue.length" />
     </div>
@@ -205,84 +222,43 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  /* Lighter surface + visible border so the field reads as an input rather
-     than blending into the page background. */
-  border: 1px solid #4a4a4a;
-  border-radius: 4px;
-  background: #2b2b2b;
-  min-height: 40px;
+  gap: var(--sp-1);
+  padding: 3px var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  min-height: 2.125rem;
   max-height: 120px;
   overflow-y: auto;
   cursor: text;
+  width: 100%;
 }
 
 .tag-input-wrapper:focus-within {
-  border-color: #485fc7;
-  box-shadow: 0 0 0 0.125em rgba(72, 95, 199, 0.25);
+  border-color: var(--focus);
+  box-shadow: var(--focus-ring);
 }
 
 .tag-multiselect-input {
   flex: 1;
-  min-width: 120px;
+  min-width: 7rem;
   border: none;
   outline: none;
-  font-family:
-    BlinkMacSystemFont,
-    -apple-system,
-    'Segoe UI',
-    'Roboto',
-    'Oxygen',
-    'Ubuntu',
-    'Cantarell',
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    'Helvetica',
-    'Arial',
-    sans-serif;
-  font-size: 1rem;
-  padding: 4px;
+  /* Inherit the app's family. This used to re-declare the old Bulma stack, so
+     text typed here rendered in a different typeface from every other input. */
+  font-family: inherit;
+  font-size: var(--t-md);
+  padding: 2px;
   background: transparent;
-  color: #f5f5f5;
+  color: var(--text-1);
 }
 
 .tag-multiselect-input::placeholder {
-  color: #7a7a7a;
+  color: var(--text-3);
 }
 
-.tag-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  background: #2b2b2b;
-  border: 1px solid #4a4a4a;
-  border-top: none;
-  border-radius: 0 0 4px 4px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-  max-height: 250px;
-  overflow-y: auto;
-}
-
-.tag-dropdown-item {
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.tag-dropdown-item:hover,
-.tag-dropdown-item.is-highlighted {
-  background: #3a3a3a;
-}
-
-.tag-dropdown-footer {
-  padding: 6px 12px;
-  border-top: 1px solid #363636;
-  text-align: center;
-}
+/* `.tag-dropdown*` lives in style.css — it renders through a Teleport, which
+   scoped styles cannot reach. */
 
 .tag-negated {
   text-decoration: line-through;

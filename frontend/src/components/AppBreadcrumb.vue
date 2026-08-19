@@ -117,8 +117,28 @@ function navigate(crumb: Crumb) {
 </template>
 
 <style scoped>
+/* Sits inside PageHeader now rather than in its own band above the page, so it
+   contributes a single 18px line instead of a 48px block of 16px text. */
 .app-breadcrumb {
-  padding: 0.75rem 1.5rem 0;
-  margin-bottom: 0;
+  padding: 0;
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.4;
+}
+
+.app-breadcrumb :deep(a) {
+  padding: 0 var(--sp-1);
+}
+
+.app-breadcrumb :deep(li:first-child a) {
+  padding-left: 0;
+}
+
+/* The last crumb is the page title, rendered by PageHeader directly beneath —
+   repeating it here would say the same word twice in a row. */
+/* Bulma draws the separator as `li + li::before`, so hiding the item takes its
+   separator with it — nothing dangles. */
+.app-breadcrumb :deep(li:last-child) {
+  display: none;
 }
 </style>

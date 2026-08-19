@@ -501,7 +501,7 @@ export interface paths {
         /**
          * Create a tag category
          * @description POST /tag-categories — Create a tag category. Returns the created category.
-         *     Body: { category_name, category_short, color?, description?, sort_order? }
+         *     Body: { category_name, color?, description?, sort_order? }
          */
         post: operations["dc114b35e6a6392f6c75717bf3f23651"];
         delete?: never;
@@ -917,9 +917,7 @@ export interface components {
         TagCategory: {
             category_id?: number;
             category_name?: string;
-            /** @description Short code (<= 5 chars) used in tag prefixes. */
-            category_short?: string;
-            /** @description Bulma/extended palette color name. */
+            /** @description Tag palette hue. Display only — never a semantic state name. */
             color?: string;
             description?: string;
             sort_order?: number;
@@ -1710,8 +1708,26 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description DanbooruNotConfigured */
+            /** @description DanbooruRateLimited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description DanbooruNotConfigured / DanbooruAuthFailed */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description DanbooruUnreachable / DanbooruUnavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1815,7 +1831,6 @@ export interface operations {
             content: {
                 "application/json": {
                     category_name: string;
-                    category_short: string;
                     color?: string;
                     description?: string;
                     sort_order?: number;
@@ -1856,7 +1871,6 @@ export interface operations {
             content: {
                 "application/json": {
                     category_name: string;
-                    category_short: string;
                     color?: string;
                     description?: string;
                     sort_order?: number;

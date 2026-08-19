@@ -12,7 +12,10 @@
  *   the SW fetches those thumbnails in the background and caches them.
  */
 
-const CACHE_VERSION = 'v2'
+// Bumped for the UI rebuild: prefetch now also runs for infinite-scroll batches,
+// and the shipped asset set changed wholesale. Bumping renames every cache, so
+// `activate` purges the old ones instead of serving a mix of two builds.
+const CACHE_VERSION = 'v3'
 const STATIC_CACHE = `gallery-static-${CACHE_VERSION}`
 const THUMB_CACHE = `gallery-thumbs-${CACHE_VERSION}`
 const API_CACHE = `gallery-api-${CACHE_VERSION}`
