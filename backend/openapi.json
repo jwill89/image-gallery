@@ -3,7 +3,7 @@
     "info": {
         "title": "Gallery API",
         "description": "Internal HTTP API for the self-hosted media gallery — a **hybrid REST-RPC**\ninterface served under the `/api` base path. All responses are JSON.\n\n**Conventions**\n- Reads return `200` with the resource or collection.\n- Creates return `201` with the created resource.\n- Updates (`PUT`/`PATCH`) return `200` with the updated resource.\n- Deletes return `204` with no body.\n- Non-CRUD actions (login, migrate, scan, bulk operations) are `POST`\n  verbs that return `200` with a small result object.\n- Errors return `{ \"error\": \"<MachineCode>\", \"message\": \"<human text>\" }`\n  with a `4xx`/`5xx` status. `error` is a stable PascalCase code safe to\n  branch on; `message` is for display and may change.\n\n**Auth** — a Bearer token (`Authorization: Bearer <token>`) obtained from\n`POST /auth/login` (valid 24h). All `GET`s are public; state-changing\nmethods require a token, except a small public allowlist (media tagging\nand the batched `POST /media/by-ids` read).",
-        "version": "3.0.0"
+        "version": "4.0.0"
     },
     "servers": [
         {
@@ -1167,8 +1167,28 @@
                             }
                         }
                     },
+                    "429": {
+                        "description": "DanbooruRateLimited",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
                     "500": {
-                        "description": "DanbooruNotConfigured",
+                        "description": "DanbooruNotConfigured / DanbooruAuthFailed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "DanbooruUnreachable / DanbooruUnavailable",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -1269,7 +1289,7 @@
                     "Tag Categories"
                 ],
                 "summary": "Create a tag category",
-                "description": "POST /tag-categories — Create a tag category. Returns the created category.\nBody: { category_name, category_short, color?, description?, sort_order? }",
+                "description": "POST /tag-categories — Create a tag category. Returns the created category.\nBody: { category_name, color?, description?, sort_order? }",
                 "operationId": "dc114b35e6a6392f6c75717bf3f23651",
                 "requestBody": {
                     "required": true,
@@ -1277,14 +1297,10 @@
                         "application/json": {
                             "schema": {
                                 "required": [
-                                    "category_name",
-                                    "category_short"
+                                    "category_name"
                                 ],
                                 "properties": {
                                     "category_name": {
-                                        "type": "string"
-                                    },
-                                    "category_short": {
                                         "type": "string"
                                     },
                                     "color": {
@@ -1355,14 +1371,10 @@
                         "application/json": {
                             "schema": {
                                 "required": [
-                                    "category_name",
-                                    "category_short"
+                                    "category_name"
                                 ],
                                 "properties": {
                                     "category_name": {
-                                        "type": "string"
-                                    },
-                                    "category_short": {
                                         "type": "string"
                                     },
                                     "color": {
@@ -2506,12 +2518,8 @@
                     "category_name": {
                         "type": "string"
                     },
-                    "category_short": {
-                        "description": "Short code (<= 5 chars) used in tag prefixes.",
-                        "type": "string"
-                    },
                     "color": {
-                        "description": "Bulma/extended palette color name.",
+                        "description": "Tag palette hue. Display only — never a semantic state name.",
                         "type": "string"
                     },
                     "description": {

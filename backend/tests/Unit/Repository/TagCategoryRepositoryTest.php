@@ -14,11 +14,10 @@ use PHPUnit\Framework\Attributes\CoversClass;
 #[CoversClass(TagCategory::class)]
 final class TagCategoryRepositoryTest extends DatabaseTestCase
 {
-    private function newCategory(string $name, string $short, int $sort = 0, string $color = 'white'): TagCategory
+    private function newCategory(string $name, int $sort = 0, string $color = 'neutral'): TagCategory
     {
         return (new TagCategory())
             ->setCategoryName($name)
-            ->setCategoryShort($short)
             ->setColor($color)
             ->setSortOrder($sort);
     }
@@ -27,7 +26,7 @@ final class TagCategoryRepositoryTest extends DatabaseTestCase
     {
         $repo = new TagCategoryRepository(self::makeDb());
 
-        $cat = $this->newCategory('Character', 'char', 1, 'teal');
+        $cat = $this->newCategory('Character', 1, 'teal');
         $id = $repo->save($cat);
 
         $this->assertGreaterThan(0, $id);
@@ -37,13 +36,13 @@ final class TagCategoryRepositoryTest extends DatabaseTestCase
     public function testGetByIdReturnsStoredCategory(): void
     {
         $repo = new TagCategoryRepository(self::makeDb());
-        $id = $repo->save($this->newCategory('Meta', 'meta', 0, 'purple'));
+        $id = $repo->save($this->newCategory('Meta', 0, 'violet'));
 
         $fetched = $repo->get($id);
 
         $this->assertInstanceOf(TagCategory::class, $fetched);
         $this->assertSame('Meta', $fetched->category_name);
-        $this->assertSame('purple', $fetched->color);
+        $this->assertSame('violet', $fetched->color);
     }
 
     public function testGetUnknownIdReturnsNull(): void
@@ -55,8 +54,8 @@ final class TagCategoryRepositoryTest extends DatabaseTestCase
     public function testGetAllReturnsCategoriesOrderedBySortOrder(): void
     {
         $repo = new TagCategoryRepository(self::makeDb());
-        $repo->save($this->newCategory('Bravo', 'b', 2));
-        $repo->save($this->newCategory('Alpha', 'a', 1));
+        $repo->save($this->newCategory('Bravo', 2));
+        $repo->save($this->newCategory('Alpha', 1));
 
         $all = $repo->getAll();
 
@@ -68,7 +67,7 @@ final class TagCategoryRepositoryTest extends DatabaseTestCase
     public function testSaveUpdatesExistingRowInPlace(): void
     {
         $repo = new TagCategoryRepository(self::makeDb());
-        $cat = $this->newCategory('Old', 'old');
+        $cat = $this->newCategory('Old');
         $id = $repo->save($cat);
 
         $cat->setCategoryName('New')->setColor('amber');
@@ -81,22 +80,12 @@ final class TagCategoryRepositoryTest extends DatabaseTestCase
         $this->assertCount(1, $repo->getAll());
     }
 
-    public function testGetByShortcode(): void
-    {
-        $repo = new TagCategoryRepository(self::makeDb());
-        $repo->save($this->newCategory('Artist', 'art'));
-
-        $artist = $repo->getByShortcode('art');
-        $this->assertNotNull($artist);
-        $this->assertSame('Artist', $artist->category_name);
-        $this->assertNull($repo->getByShortcode('nope'));
-    }
 
     public function testGetAllIds(): void
     {
         $repo = new TagCategoryRepository(self::makeDb());
-        $id1 = $repo->save($this->newCategory('One', 'o'));
-        $id2 = $repo->save($this->newCategory('Two', 't'));
+        $id1 = $repo->save($this->newCategory('One'));
+        $id2 = $repo->save($this->newCategory('Two'));
 
         $this->assertSame([$id1, $id2], $repo->getAllIds());
     }
@@ -105,7 +94,7 @@ final class TagCategoryRepositoryTest extends DatabaseTestCase
     {
         $db = self::makeDb();
         $repo = new TagCategoryRepository($db);
-        $catId = $repo->save($this->newCategory('Cat', 'c'));
+        $catId = $repo->save($this->newCategory('Cat'));
 
         $insert = $db->prepare('INSERT INTO tags (category_id, tag_name) VALUES (:c, :n)');
         $insert->execute([':c' => $catId, ':n' => 'tag1']);

@@ -2,6 +2,25 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteLocationNormalized } from 'vue-router'
 import { useGalleryStore } from '../stores/gallery'
 
+/**
+ * Which navbar controls a route supports.
+ *
+ * `showBlur`    — the page renders media, so the blur toggle does something.
+ * `showViewMode`— the page is a paginated media list, so items-per-page and
+ *                 continuous scrolling apply.
+ *
+ * These are declared per route rather than derived from a chain of negations in
+ * the navbar, which is how the per-page select and infinite-scroll toggle ended
+ * up live on /favorites (no pagination) and on the 404 page.
+ */
+declare module 'vue-router' {
+  interface RouteMeta {
+    title?: string
+    showBlur?: boolean
+    showViewMode?: boolean
+  }
+}
+
 const isMediaGrid = (r: RouteLocationNormalized) =>
   r.name === 'media' || r.name === 'media-with-tags'
 
@@ -16,7 +35,7 @@ const router = createRouter({
       path: '/media/:page?/:perPage?',
       name: 'media',
       component: () => import('../views/GalleryView.vue'),
-      meta: { title: 'Media' },
+      meta: { title: 'Media', showBlur: true, showViewMode: true },
       props: (route) => {
         const pp = Number(route.params.perPage)
         return {
@@ -29,7 +48,7 @@ const router = createRouter({
       path: '/media/:page/:perPage/with-tags/:tags',
       name: 'media-with-tags',
       component: () => import('../views/GalleryView.vue'),
-      meta: { title: 'Media' },
+      meta: { title: 'Media', showBlur: true, showViewMode: true },
       props: (route) => {
         const pp = Number(route.params.perPage)
         return {
@@ -43,7 +62,7 @@ const router = createRouter({
       path: '/media/:id/tags',
       name: 'media-tags',
       component: () => import('../views/MediaTagsView.vue'),
-      meta: { title: 'Media Tags' },
+      meta: { title: 'Media Tags', showBlur: true },
       props: (route) => ({
         mediaId: Number(route.params.id),
       }),
@@ -55,7 +74,7 @@ const router = createRouter({
       path: '/random/media/:id/tags',
       name: 'media-random',
       component: () => import('../views/MediaTagsView.vue'),
-      meta: { title: 'Random Media' },
+      meta: { title: 'Random Media', showBlur: true },
       props: (route) => ({
         mediaId: Number(route.params.id),
       }),
@@ -90,7 +109,9 @@ const router = createRouter({
     {
       path: '/favorites',
       name: 'favorites',
-      meta: { title: 'Favorites' },
+      // Renders media (so blur applies) but has no pagination — which is why
+      // the items-per-page select never belonged here.
+      meta: { title: 'Favorites', showBlur: true },
       component: () => import('../views/FavoritesView.vue'),
     },
     {
@@ -102,7 +123,9 @@ const router = createRouter({
     {
       path: '/duplicates',
       name: 'duplicates',
-      meta: { title: 'Duplicates' },
+      // Side-by-side comparison images honour `blurThumbnails`, but the old
+      // negation chain lumped this in with "admin utility" and hid the toggle.
+      meta: { title: 'Duplicates', showBlur: true },
       component: () => import('../views/DuplicatesView.vue'),
     },
     {
@@ -131,8 +154,8 @@ const router = createRouter({
 
 // Set document title from route meta
 router.afterEach((to) => {
-  const title = to.meta.title as string | undefined
-  document.title = title ? `Gallery - ${title}` : 'Gallery'
+  // `meta.title` is typed by the RouteMeta declaration above, so no cast.
+  document.title = to.meta.title ? `Gallery - ${to.meta.title}` : 'Gallery'
 })
 
 export default router

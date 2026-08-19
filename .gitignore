@@ -16,6 +16,8 @@
 # Secrets and runtime / generated data — never commit.
 /backend/.env
 /backend/db/gallery.db
+# Pre-migrate snapshots taken by scripts/deploy.ps1 (created on the host).
+/backend/db/.backups/
 /backend/cache/
 /backend/logs/
 /backend/dupes/

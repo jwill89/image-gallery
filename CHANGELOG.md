@@ -14,6 +14,206 @@ release body taken from that version's section below. So bump the version and
 update its section here in the same commit and push a green commit — no manual
 tagging.
 
+## [4.0.0] - 2026-08-05
+
+A UI and design-system release. The interface was rebuilt around a token layer
+and a real type scale, the interactive primitives moved to
+[Reka UI](https://reka-ui.com), and the tag palette was separated from the
+semantic (state) palette at the data layer. **Breaking:** the tag category
+shortcode is gone, so the HTTP contract moves to `4.0.0`.
+
+### Breaking
+
+- **`category_short` removed from tag categories.** The field existed for one
+  feature — typing `a:artist name` so the prefix picked the category — parsed by
+  `TagRepository::getOrCreate()`, which had no callers. Every live path that
+  creates a tag already set the category explicitly (the Tags page dropdown, or
+  the Danbooru importer's category map), so the column, its two unique indexes,
+  the API validation and the help text all described something the application
+  could not do. `POST`/`PUT /tag-categories` no longer accept or require it, and
+  it is gone from the `TagCategory` schema. Migration `20260806000000` drops the
+  column; `down()` restores it but re-derives the codes from category initials.
+- **Tag category colors moved off the semantic palette.** Categories stored Bulma
+  state names — Artist was literally `danger` — which made a tag chip and the
+  delete button the same red and tied the tag colors to Bulma. Migration
+  `20260805000000` rewrites the stored values (`danger→rose`, `warning→amber`,
+  `success→emerald`, `info→sky`, `white→neutral`), preserving how each category
+  looks. `VALID_COLORS` is now nine hue names with no state names among them.
+
+### Added
+
+- **One rule for where feedback appears.** Response messages were split between
+  the toast system and four ad-hoc Bulma `.notification` blocks that picked
+  their colours off the framework palette — and in two cases said the same thing
+  twice, so completing an upload or a Danbooru import showed a banner while an
+  identical toast slid in beside it. Feedback now has two homes with a clear
+  rule: a **toast** reports the outcome of a finished action, and the new
+  `AppAlert` states a condition where it applies and stays there while you act
+  on it (an import failure keeps its explanation inside the dialog you retry
+  from, and the upload page keeps a summary of the last run once the toasts have
+  gone — including after a failure, which the banner it replaces never showed,
+  because it required an empty file list and failed files stay selected for
+  retry). Genuinely duplicated messages collapsed into the toast. The two are
+  drawn deliberately unalike so it is obvious which will vanish on its own: a
+  toast is an object above the page — neutral surface, drop shadow, severity
+  stripe, close button — while an alert is flush in the page, flat and washed
+  with the severity colour, with nothing to dismiss. Field validation is
+  neither, and sits beside its input.
+- **Click-to-zoom on media** — the image on a detail page opens a full-bleed
+  lightbox (keyboard and Escape included). Previously the only route to full
+  resolution was a text link inside the metadata table.
+- **A position indicator for infinite scroll** — a pinned status pill showing
+  where you are in the collection (`1,240 of 5,282`), how much has loaded, and a
+  way back to the top. Infinite scroll has no pager and scrolls the page header
+  out of view, so there was previously nothing on screen telling you where you
+  were.
+- **Thumbnail prefetch during infinite scroll** — each batch now warms the next
+  one, the same way paging already warmed the next page. Prefetch had only ever
+  run in paged mode, so every infinite-scroll batch arrived cold.
+- **Tooltips on icon-only controls**, replacing `title` — which never appears on
+  touch and cannot be reached by keyboard.
+- **Design tokens** — `--surface-*`, `--text-*`, `--border*`, a six-step type
+  scale, a space scale and radii, with three deliberately separate palettes:
+  neutral chrome, semantic state, and tag categories.
+
+### Changed
+
+- **The media grid fills the row.** `repeat(auto-fill, minmax(150px, 200px))`
+  sizes track *count* from the maximum, so it always produced rigid 200px columns
+  and left the remainder as dead gutter — and exactly one column on a 375px
+  phone. Now `minmax(_, 1fr)`: 6 columns instead of 5 at 1280px with no dead
+  gutter, and 2 instead of 1 on a phone. Thumbnails stay letterboxed.
+- **The navbar no longer does five jobs.** Blur is a toggle that stays put at
+  every width; items-per-page and infinite scroll merged into one "view mode"
+  select (they were always the same decision); Upload, Duplicates and sign-out
+  moved into an account menu, so signing in no longer changes the shape of the
+  nav and sign-out is no longer styled as a destructive action. Search is now a
+  sibling of the collapsing menu rather than inside it, so it survives on mobile.
+- **Control visibility is declared per route** (`meta.showBlur`,
+  `meta.showViewMode`) instead of a chain of negations. Duplicates gains the blur
+  toggle it always needed; Favorites and the 404 page lose the items-per-page and
+  infinite-scroll controls, which did nothing there.
+- **Interactive primitives now come from Reka UI** — `Dialog` (and `AlertDialog`
+  for irreversible actions), `DropdownMenu`, `Combobox`, `Toast`, `Pagination`,
+  `Toolbar`, `Toggle` and `Tooltip`.
+- **A type scale is actually applied.** The gallery page previously used exactly
+  two font sizes, and page titles varied between views; there is now one
+  `PageHeader` and a scale from 11px to 25px.
+- **Density**: Bulma's `.section` (48px on every side) and `.footer` (226px tall
+  for three lines) are overridden responsively. Chrome above the first thumbnail
+  drops from 250px to ~140px on desktop and 302px to ~136px on a phone.
+- **The breadcrumb is part of the page header** rather than a separate 48px band,
+  and the last crumb is the title instead of being repeated below it.
+- **The Tags page is usable on a phone** — the table becomes a list below 768px.
+  As a table its rows inflated to 132px because the actions column squeezed to
+  56px and stacked its buttons, 242px off the right edge.
+- **One overflow menu per tag row** instead of three filled buttons, which at 25
+  rows meant 75 saturated controls competing with the content.
+- **Media metadata is a definition list**, not a bordered table with no
+  `.table-container` — which clipped the date and put the MD5 copy button off
+  screen at 375px.
+- **The tag help panel is a color legend.** With shortcodes gone, the useful half
+  was always "what do these colors mean".
+- **Toasts** are rebuilt on Reka UI, keeping the existing store. Severity is a
+  stripe drawn from the shared semantic tokens; the old container carried
+  fourteen hardcoded colors, including a second grey ramp and Bulma's stock
+  palette.
+- **`EmptyState` and `StatRow` are components**, so "nothing here" reads the same
+  everywhere. Duplicates previously used a plain notification bar for it.
+- **The service worker only registers in production** and `CACHE_VERSION` is
+  bumped to `v3`, so a deploy can't serve a mix of two builds and a worker no
+  longer sits in front of the dev server.
+- **Deploys snapshot the database before migrating** (`db/.backups/`, via SQLite
+  `VACUUM INTO`, five kept). The rollback snapshot was code-only, so a failed
+  migration left rolled-back code against a forward-migrated database. The
+  snapshot is deliberately *not* auto-restored — the failure trap fires on any
+  non-zero exit, and reverting data could discard uploads from the deploy window.
+
+### Fixed
+
+- **Danbooru import reported every failure as "not found on Danbooru".**
+  `apiGet()` collapsed any non-200 response into `null`, so rejected credentials,
+  a rate limit and a genuine miss were indistinguishable — a request Danbooru
+  refused (a revoked key, or a source address missing from the key's IP
+  allowlist, which is what enabling IPv6 on the server causes) returned a 404 for
+  every single item, including ones that plainly exist. The tagger now
+  records *why* a call failed and the endpoint reports it: `500`
+  `DanbooruAuthFailed` for rejected credentials, `429` `DanbooruRateLimited`,
+  `503` `DanbooruUnreachable` for a network or TLS failure, and `503`
+  `DanbooruUnavailable` for an upstream error, each logged server-side. A real
+  miss still returns `404`. These deliberately avoid `502`/`504`: Cloudflare
+  replaces gateway-class responses with its own HTML error page, which would
+  discard the explanation.
+- **`composer lint` failed on 34 files nobody had edited.** The repository had no
+  `.gitattributes`, so a Windows checkout with `core.autocrlf=true` wrote CRLF
+  while phpcs PSR-12 rejects any file whose line endings are not LF — and
+  `git checkout` silently undid whatever Prettier had just normalised. A
+  `.gitattributes` now pins `* text=auto eol=lf`, which overrides
+  `core.autocrlf` so no per-machine setup is needed, and the working tree was
+  converted. `LICENSE`, the one file stored as CRLF in the index itself, is
+  normalised too. This also flushed CRLF out of `openapi.json`, where line
+  endings from PHP docblocks had been baked into description strings as escaped
+  `\r\n`.
+- **Toasts raised from inside a modal could not be dismissed.** Reka's Dialog
+  sets `pointer-events: none` on `<body>` while it is open, which the toast
+  viewport inherited, leaving Dismiss and Undo dead on any toast a dialog
+  produced — the toast was drawn on top (`z-index: 64` over the overlay's `60`)
+  but nothing in it could be clicked. The viewport now sets `pointer-events:
+  none` explicitly, so its mostly-empty rectangle never swallows clicks meant
+  for the page, with `pointer-events: auto` on each toast.
+- **Infinite scroll stalled on tall viewports.** `IntersectionObserver` only
+  reports intersection *changes*; on a window tall enough that a fresh batch
+  didn't push the sentinel back out of view, no second callback ever arrived and
+  loading stopped with a spinner and nothing left to scroll. Batches now top up
+  while the sentinel remains in the trigger zone.
+- **Tag search didn't filter.** The combobox bound a `searchTerm` prop that does
+  not exist on Reka's `ComboboxRoot`, so typing never reached the filter, and the
+  root's own selection surfaced the raw tag id beside the chip.
+- **Dropdown surfaces rendered unstyled** — transparent, unbordered,
+  `z-index: auto`. Reka renders them through a Teleport, and Vue cannot apply a
+  `data-v-*` scope id across that boundary, so every rule in a `<style scoped>`
+  block silently failed to match. Portalled surfaces now live in the global sheet.
+- **Hover styling on inert navbar cells** — Bulma reuses `.navbar-item` for the
+  `<div>` wrappers around form controls, so five non-interactive cells lit up as
+  if they were links.
+- **The tag search box** used a different background *and typeface* from every
+  other input, from a grey ramp and font stack that matched nothing else.
+- Dead dependency `@vueform/multiselect` removed — never imported.
+
+### Security
+
+- **squizlabs/php_codesniffer 4.0.1 -> 4.0.4** (CVE-2026-67434, OS command
+  injection, high). This one reached production: `scripts/deploy.ps1` runs
+  `composer install` *without* `--no-dev` on purpose, because Phinx — the
+  migration tool — is a dev dependency, so `require-dev` packages land on the
+  host rather than staying on developer machines.
+- **nanoid 3.3.17 -> 3.3.18** (GHSA-2v37-7h3g-55p8, high) — a transitive
+  dependency of `vite` via `postcss`, build-time only and never bundled into
+  what ships. Patched in the lockfile; `vite` and `postcss` are unchanged.
+- Remaining dependencies brought current: `phpunit` 13.0.0 -> 13.3.1,
+  `phpstan` 2.2.2 -> 2.2.8, `phpstan-phpunit` 2.0.16 -> 2.0.18, `php-cs-fixer`
+  3.95.11 -> 3.95.20, `phinx` 0.16.11 -> 0.16.12, `swagger-php` 6.3.0 -> 6.6.0
+  (which regenerates `openapi.json` byte-identically, so the contract is
+  unchanged), plus `vue` 3.5.41, `vite` 8.2.1, `vitest` 4.1.11, `reka-ui`
+  2.10.3, `eslint` 10.8.1, `happy-dom` 20.11.2, `vue-tsc` 3.3.10, `@types/node`
+  26.2.0 and `pinia` 3.0.4 -> **4.0.3**.
+- **TypeScript stays on 6.0.3.** 7.0.2 is the native port and drops the
+  `./lib/tsc` subpath from its package `exports`; `vue-tsc` 3.3.10 — the current
+  release — resolves that path directly and dies with
+  `ERR_PACKAGE_PATH_NOT_EXPORTED`, so typechecking is impossible on TS 7 until
+  `vue-tsc` ships support. Its `>=5.0.0` peer range does not reflect this.
+
+- `roave/security-advisories` refreshed. It is pinned to `dev-latest` and blocks
+  installing known-vulnerable packages, but only knows what its last-pulled
+  commit knew — the phpcs advisory was published after the pinned commit, which
+  is how 4.0.1 got in. Worth refreshing alongside any dependency work.
+
+### Removed
+
+- `TagRepository::getOrCreate()` and `TagCategoryRepository::getByShortcode()`,
+  both unreachable.
+- `TagShortcodeModal`, replaced by `TagCategoryLegend`.
+
 ## [3.3.0] - 2026-07-03
 
 A broad frontend release: infinite-scroll continuity, a consistency and

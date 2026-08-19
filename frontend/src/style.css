@@ -1,723 +1,1190 @@
 /* ═══════════════════════════════════════════════════════════
-   Gallery — Custom Theme
-   WCAG AA compliant on dark backgrounds (#242424 base)
-   All text colors ≥ 4.5:1 contrast ratio for normal text
-   ═══════════════════════════════════════════════════════════ */
+   Gallery — design tokens + Bulma overrides
 
-/* ── Extended Color Palette ───────────────────────────────
-   These supplement Bulma's built-in named colors
-   (white, light, dark, primary, link, info, success,
-   warning, danger) with more options for tag categories.
-   ──────────────────────────────────────────────────────── */
+   Three palettes, kept strictly apart:
+
+     1. Chrome    — neutral greys only. The artwork carries the colour;
+                    the interface deliberately carries none.
+     2. Semantic  — danger / success / warning / info. State, never decoration.
+     3. Tag       — the `--tag-*` scale below. Decoration, never state.
+
+   Rule 2 and 3 must not borrow from each other. Tag categories used to be
+   stored as Bulma semantic names (Artist = `danger`), which made the Artist
+   chip and the delete button the same red, and tied the tag palette to Bulma.
+   They now live in their own `tag--<hue>` namespace.
+
+   Everything below reads from a token. Nothing hardcodes a hex outside the
+   :root blocks — which is what makes dropping Bulma a deletion job later,
+   rather than a rewrite.
+   ═══════════════════════════════════════════════════════════ */
 
 :root {
-  --gallery-teal: #2dd4bf;
-  --gallery-purple: #a78bfa;
-  --gallery-pink: #f472b6;
-  --gallery-orange: #fb923c;
-  --gallery-cyan: #22d3ee;
-  --gallery-lime: #a3e635;
-  --gallery-indigo: #818cf8;
-  --gallery-rose: #fb7185;
-  --gallery-amber: #fbbf24;
-  --gallery-emerald: #34d399;
-  --gallery-blue: #60a5fa;
-  --gallery-green: #4ade80;
-  --gallery-yellow: #facc15;
-  --gallery-sky: #38bdf8;
-  --gallery-fuchsia: #e879f9;
-  --gallery-slate: #94a3b8;
+  /* ── Chrome: surfaces ─────────────────────────────────── */
+  --surface-0: #ffffff; /* page ground */
+  --surface-1: #f6f7f8; /* navbar, footer, raised panels */
+  --surface-2: #edeef0; /* hover, table stripe, inputs */
+  --surface-3: #e0e2e5; /* pressed / selected */
+  --border: #d8dade;
+  --border-strong: #b9bdc3;
 
-  /* Dark text for light tag backgrounds */
-  --gallery-tag-dark-text: #0f172a;
-}
+  /* ── Chrome: text ─────────────────────────────────────── */
+  --text-1: #16181c;
+  --text-2: #53575e;
+  --text-3: #7d828a;
+  --text-inverse: #ffffff;
 
-/* ── Tag background classes (is-COLOR) ─────────────────── */
+  /* ── Focus: functional, not a brand accent ────────────── */
+  --focus: #2f6f86;
+  --focus-ring: 0 0 0 2px rgba(47, 111, 134, 0.32);
 
-.tag.is-teal {
-  background-color: var(--gallery-teal);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-purple {
-  background-color: var(--gallery-purple);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-pink {
-  background-color: var(--gallery-pink);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-orange {
-  background-color: var(--gallery-orange);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-cyan {
-  background-color: var(--gallery-cyan);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-lime {
-  background-color: var(--gallery-lime);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-indigo {
-  background-color: var(--gallery-indigo);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-rose {
-  background-color: var(--gallery-rose);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-amber {
-  background-color: var(--gallery-amber);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-emerald {
-  background-color: var(--gallery-emerald);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-blue {
-  background-color: var(--gallery-blue);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-green {
-  background-color: var(--gallery-green);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-yellow {
-  background-color: var(--gallery-yellow);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-sky {
-  background-color: var(--gallery-sky);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-fuchsia {
-  background-color: var(--gallery-fuchsia);
-  color: var(--gallery-tag-dark-text);
-}
-.tag.is-slate {
-  background-color: var(--gallery-slate);
-  color: var(--gallery-tag-dark-text);
-}
+  /* ── Semantic: state only ─────────────────────────────── */
+  --danger: #b8392a;
+  --danger-fg: #ffffff;
+  --danger-soft: rgba(184, 57, 42, 0.1);
+  --success: #1c7047;
+  --success-fg: #ffffff;
+  --success-soft: rgba(28, 112, 71, 0.1);
+  --warning: #8a5a08;
+  --warning-fg: #ffffff;
+  --warning-soft: rgba(138, 90, 8, 0.1);
+  --info: #2a6079;
+  --info-fg: #ffffff;
+  --info-soft: rgba(42, 96, 121, 0.1);
 
-/* Delete button inside extended-color tags */
-.tag.is-teal .delete::before,
-.tag.is-teal .delete::after,
-.tag.is-purple .delete::before,
-.tag.is-purple .delete::after,
-.tag.is-pink .delete::before,
-.tag.is-pink .delete::after,
-.tag.is-orange .delete::before,
-.tag.is-orange .delete::after,
-.tag.is-cyan .delete::before,
-.tag.is-cyan .delete::after,
-.tag.is-lime .delete::before,
-.tag.is-lime .delete::after,
-.tag.is-indigo .delete::before,
-.tag.is-indigo .delete::after,
-.tag.is-rose .delete::before,
-.tag.is-rose .delete::after,
-.tag.is-amber .delete::before,
-.tag.is-amber .delete::after,
-.tag.is-emerald .delete::before,
-.tag.is-emerald .delete::after {
-  background-color: var(--gallery-tag-dark-text);
-}
-.tag.is-blue .delete::before,
-.tag.is-blue .delete::after,
-.tag.is-green .delete::before,
-.tag.is-green .delete::after,
-.tag.is-yellow .delete::before,
-.tag.is-yellow .delete::after,
-.tag.is-sky .delete::before,
-.tag.is-sky .delete::after,
-.tag.is-fuchsia .delete::before,
-.tag.is-fuchsia .delete::after,
-.tag.is-slate .delete::before,
-.tag.is-slate .delete::after {
-  background-color: var(--gallery-tag-dark-text);
-}
+  /* ── Favourite: neither state nor tag; its own thing ──── */
+  --fav: #d8365c;
 
-/* ── Text color classes (has-text-COLOR) ───────────────── */
+  /* ── Tag category palette ─────────────────────────────────
+     Display only. Deliberately not named after states, so nobody
+     can wire "danger" to a category again. `--tag-ink` is the
+     text colour that sits on any filled chip. */
+  --tag-ink: #12161a;
+  --tag-rose: #f0729b;
+  --tag-amber: #e0a83c;
+  --tag-emerald: #4fc98a;
+  --tag-sky: #5bc0de;
+  --tag-violet: #b79ced;
+  --tag-teal: #45c8b8;
+  --tag-orange: #f0955a;
+  --tag-lime: #b6d95e;
+  /* `neutral` is the outline chip — General holds the overwhelming
+     majority of tags, so filling it drowns out the categorised ones. */
 
-.has-text-teal {
-  color: var(--gallery-teal) !important;
-}
-.has-text-purple {
-  color: var(--gallery-purple) !important;
-}
-.has-text-pink {
-  color: var(--gallery-pink) !important;
-}
-.has-text-orange {
-  color: var(--gallery-orange) !important;
-}
-.has-text-cyan {
-  color: var(--gallery-cyan) !important;
-}
-.has-text-lime {
-  color: var(--gallery-lime) !important;
-}
-.has-text-indigo {
-  color: var(--gallery-indigo) !important;
-}
-.has-text-rose {
-  color: var(--gallery-rose) !important;
-}
-.has-text-amber {
-  color: var(--gallery-amber) !important;
-}
-.has-text-emerald {
-  color: var(--gallery-emerald) !important;
-}
-.has-text-blue {
-  color: var(--gallery-blue) !important;
-}
-.has-text-green {
-  color: var(--gallery-green) !important;
-}
-.has-text-yellow {
-  color: var(--gallery-yellow) !important;
-}
-.has-text-sky {
-  color: var(--gallery-sky) !important;
-}
-.has-text-fuchsia {
-  color: var(--gallery-fuchsia) !important;
-}
-.has-text-slate {
-  color: var(--gallery-slate) !important;
-}
+  /* ── Type scale ───────────────────────────────────────── */
+  --t-xs: 0.6875rem; /* 11px   — micro labels, uppercase eyebrows */
+  --t-sm: 0.78125rem; /* 12.5px — metadata, chips, table numerics */
+  --t-md: 0.875rem; /* 14px   — dense UI: tables, buttons, nav */
+  --t-base: 0.9375rem; /* 15px   — body copy */
+  --t-lg: 1.1875rem; /* 19px   — section headings */
+  --t-xl: 1.5625rem; /* 25px   — page titles */
 
-/* ── Button color classes ──────────────────────────────── */
+  --lh-tight: 1.25;
+  --lh-normal: 1.5;
 
-.button.is-teal {
-  background-color: var(--gallery-teal);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-purple {
-  background-color: var(--gallery-purple);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-pink {
-  background-color: var(--gallery-pink);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-orange {
-  background-color: var(--gallery-orange);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-cyan {
-  background-color: var(--gallery-cyan);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-lime {
-  background-color: var(--gallery-lime);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-indigo {
-  background-color: var(--gallery-indigo);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-rose {
-  background-color: var(--gallery-rose);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-amber {
-  background-color: var(--gallery-amber);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
-.button.is-emerald {
-  background-color: var(--gallery-emerald);
-  border-color: transparent;
-  color: var(--gallery-tag-dark-text);
-}
+  /* ── Space scale ──────────────────────────────────────── */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
 
-.button.is-teal:hover {
-  background-color: color-mix(in srgb, var(--gallery-teal) 85%, black);
-}
-.button.is-purple:hover {
-  background-color: color-mix(in srgb, var(--gallery-purple) 85%, black);
-}
-.button.is-pink:hover {
-  background-color: color-mix(in srgb, var(--gallery-pink) 85%, black);
-}
-.button.is-orange:hover {
-  background-color: color-mix(in srgb, var(--gallery-orange) 85%, black);
-}
-.button.is-cyan:hover {
-  background-color: color-mix(in srgb, var(--gallery-cyan) 85%, black);
-}
-.button.is-lime:hover {
-  background-color: color-mix(in srgb, var(--gallery-lime) 85%, black);
-}
-.button.is-indigo:hover {
-  background-color: color-mix(in srgb, var(--gallery-indigo) 85%, black);
-}
-.button.is-rose:hover {
-  background-color: color-mix(in srgb, var(--gallery-rose) 85%, black);
-}
-.button.is-amber:hover {
-  background-color: color-mix(in srgb, var(--gallery-amber) 85%, black);
-}
-.button.is-emerald:hover {
-  background-color: color-mix(in srgb, var(--gallery-emerald) 85%, black);
-}
+  /* ── Radius ───────────────────────────────────────────── */
+  --r-sm: 3px;
+  --r-md: 5px;
+  --r-lg: 8px;
 
-/* ── Outlined button variants ──────────────────────────── */
+  /* ── Elevation ────────────────────────────────────────── */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-3: 0 8px 28px rgba(0, 0, 0, 0.18);
 
-.button.is-teal.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-teal);
-  color: var(--gallery-teal);
-}
-.button.is-purple.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-purple);
-  color: var(--gallery-purple);
-}
-.button.is-pink.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-pink);
-  color: var(--gallery-pink);
-}
-.button.is-orange.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-orange);
-  color: var(--gallery-orange);
-}
-.button.is-cyan.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-cyan);
-  color: var(--gallery-cyan);
-}
-.button.is-lime.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-lime);
-  color: var(--gallery-lime);
-}
-.button.is-indigo.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-indigo);
-  color: var(--gallery-indigo);
-}
-.button.is-rose.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-rose);
-  color: var(--gallery-rose);
-}
-.button.is-amber.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-amber);
-  color: var(--gallery-amber);
-}
-.button.is-emerald.is-outlined {
-  background-color: transparent;
-  border-color: var(--gallery-emerald);
-  color: var(--gallery-emerald);
-}
+  /* ── Type families ────────────────────────────────────── */
+  --font-sans:
+    Inter, 'SF Pro', 'Segoe UI', Roboto, Oxygen, Ubuntu, 'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
 
-/* ═══════════════════════════════════════════════════════════
-   Modal Overrides — Fix dark-mode appearance
-   Removes the white/light glow on modal-card-head and
-   ensures the entire modal blends with the dark theme.
-   ═══════════════════════════════════════════════════════════ */
+  /* ── Chrome geometry ──────────────────────────────────── */
+  --navbar-h: 48px;
+}
 
 @media (prefers-color-scheme: dark) {
-  .modal-card-head {
-    background-color: #1e2028;
-    border-bottom: 1px solid #363b4e;
-  }
-
-  .modal-card-title {
-    color: #e8eaed;
-  }
-
-  .modal-card-body {
-    background-color: #262a36;
-    color: #d1d5db;
-  }
-
-  .modal-card-foot {
-    background-color: #1e2028;
-    border-top: 1px solid #363b4e;
-  }
-
-  /* Fix modal form labels */
-  .modal-card-body .label {
-    color: #d1d5db;
-  }
-
-  /* Fix modal help text */
-  .modal-card-body .help {
-    color: #9ca3af;
-  }
-  .modal-card-body .help.is-danger {
-    color: #f87171;
-  }
-  .modal-card-body .help.is-success {
-    color: #4ade80;
-  }
-  .modal-card-body .help.is-warning {
-    color: #fbbf24;
-  }
-
-  /* Fix modal inputs */
-  .modal-card-body .input,
-  .modal-card-body .textarea,
-  .modal-card-body .select select {
-    background-color: #1a1d27;
-    border-color: #3d4358;
-    color: #e8eaed;
-  }
-
-  .modal-card-body .input:focus,
-  .modal-card-body .textarea:focus,
-  .modal-card-body .select select:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
-  }
-
-  .modal-card-body .input::placeholder,
-  .modal-card-body .textarea::placeholder {
-    color: #6b7280;
-  }
-
-  /* Fix the delete (×) button in modal headers */
-  .modal-card-head .delete {
-    background-color: rgba(255, 255, 255, 0.15);
-  }
-  .modal-card-head .delete:hover {
-    background-color: rgba(255, 255, 255, 0.25);
-  }
-
-  /* Fix modal radio/checkbox labels */
-  .modal-card-body .radio,
-  .modal-card-body .checkbox {
-    color: #d1d5db;
-  }
-
-  /* ── Navbar dark mode ─────────────────────────────────── */
-
-  .navbar-item:hover,
-  a.navbar-item:hover {
-    background-color: #2e3346;
-    color: #ffffff;
-  }
-
-  .navbar-item.is-selected {
-    color: #ffffff;
-  }
-
-  /* ── Table dark mode improvements ─────────────────────── */
-
-  .table {
-    background-color: #1a1d27;
-    color: #d1d5db;
-  }
-
-  .table th {
-    color: #e8eaed;
-    border-color: #363b4e;
-  }
-
-  .table td {
-    border-color: #2e3346;
-  }
-
-  .table.is-striped tbody tr:nth-child(even) {
-    background-color: #1e2028;
-  }
-
-  .table.is-hoverable tbody tr:hover {
-    background-color: #2e3346;
-  }
-
-  .table thead th {
-    border-bottom-color: #3d4358;
-  }
-
-  /* ── Box dark mode ────────────────────────────────────── */
-
-  .box {
-    background-color: #1e2028;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-
-  /* ── Pagination dark mode ─────────────────────────────── */
-
-  .pagination-link,
-  .pagination-previous,
-  .pagination-next {
-    border-color: #3d4358;
-    color: #d1d5db;
-  }
-
-  .pagination-link:hover,
-  .pagination-previous:hover,
-  .pagination-next:hover {
-    border-color: #6366f1;
-    color: #e8eaed;
-  }
-
-  /* indigo-600 (not -500) so white text clears 4.5:1 AA (was 4.47:1). */
-  .pagination-link.is-current {
-    background-color: #4f46e5;
-    border-color: #4f46e5;
-    color: #ffffff;
-  }
-
-  /* #9ca3af clears 4.5:1 on the dark background (the old #6b7280 was ~3:1). */
-  .pagination-ellipsis {
-    color: #9ca3af;
-  }
-
-  /* Disabled Previous/Next: still legible (AA) but visibly inert. */
-  .pagination-previous.is-disabled,
-  .pagination-next.is-disabled {
-    color: #9ca3af;
-    border-color: #2e3346;
-    background-color: transparent;
-    cursor: not-allowed;
-  }
-
-  .pagination-previous.is-disabled:hover,
-  .pagination-next.is-disabled:hover {
-    border-color: #2e3346;
-    color: #9ca3af;
-  }
-
-  /* ── Notification dark mode ───────────────────────────── */
-
-  .notification.is-success.is-light {
-    background-color: rgba(72, 199, 142, 0.12);
-    color: #4ade80;
-  }
-
-  .notification.is-danger.is-light {
-    background-color: rgba(241, 70, 104, 0.12);
-    color: #f87171;
-  }
-
-  .notification.is-warning.is-light {
-    background-color: rgba(255, 224, 138, 0.1);
-    color: #fbbf24;
-  }
-
-  .notification.is-info.is-light {
-    background-color: rgba(62, 142, 208, 0.12);
-    color: #60a5fa;
-  }
-
-  /* ── Code tag styling ─────────────────────────────────── */
-
-  code {
-    background-color: rgba(99, 102, 241, 0.12);
-    color: #a5b4fc;
-    padding: 0.15em 0.4em;
-    border-radius: 3px;
-  }
-
-  /* ── Breadcrumb styling ───────────────────────────────── */
-
-  .breadcrumb a {
-    color: #9ca3af;
-  }
-
-  .breadcrumb a:hover {
-    color: #e8eaed;
-  }
-
-  .breadcrumb li.is-active a {
-    color: #e8eaed;
-  }
-
-  .breadcrumb li + li::before {
-    color: #4b5563;
-  }
-
-  /* ── Form select dark mode ────────────────────────────── */
-
-  .select select {
-    background-color: #1a1d27;
-    border-color: #3d4358;
-    color: #d1d5db;
-  }
-
-  .select select:hover {
-    border-color: #4b5563;
-  }
-
-  .select::after {
-    border-color: #9ca3af;
-  }
-
-  .input {
-    background-color: #1a1d27;
-    border-color: #3d4358;
-    color: #e8eaed;
-  }
-
-  .input:focus,
-  .select select:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
-  }
-
-  .input::placeholder {
-    color: #6b7280;
-  }
-
-  .textarea {
-    background-color: #1a1d27;
-    border-color: #3d4358;
-    color: #e8eaed;
-  }
-
-  .textarea:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
-  }
-
-  .textarea::placeholder {
-    color: #6b7280;
-  }
-
-  /* ── HR rule ──────────────────────────────────────────── */
-
-  hr {
-    background-color: #2e3346;
-  }
-
-  /* ── Card dark mode ───────────────────────────────────── */
-
-  .card {
-    background-color: #1e2028;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  }
-
-  .card-footer {
-    border-top-color: #2e3346;
-  }
-
-  .card-footer-item {
-    border-right-color: #2e3346;
-    color: #d1d5db;
-  }
-
-  /* ── Footer dark mode ─────────────────────────────────── */
-
-  .footer {
-    background-color: #111318;
-    color: #9ca3af;
-  }
-
-  .footer a {
-    color: #818cf8;
-  }
-
-  .footer a:hover {
-    color: #a5b4fc;
-  }
-
-  /* ── General link styling ─────────────────────────────── */
-
-  a.has-text-link {
-    color: #818cf8;
-  }
-
-  a.has-text-link:hover {
-    color: #a5b4fc;
+  :root {
+    --surface-0: #131417;
+    --surface-1: #1a1c20;
+    --surface-2: #22252a;
+    --surface-3: #2c3037;
+    --border: #32363e;
+    --border-strong: #3e434c;
+
+    --text-1: #e6e8ea;
+    --text-2: #a0a5ac;
+    --text-3: #7c8188;
+    --text-inverse: #16181c;
+
+    --focus: #7fb3c8;
+    --focus-ring: 0 0 0 2px rgba(127, 179, 200, 0.3);
+
+    --danger: #e0614c;
+    --danger-fg: #1a0f0c;
+    --danger-soft: rgba(224, 97, 76, 0.14);
+    --success: #4fc98a;
+    --success-fg: #0b1a12;
+    --success-soft: rgba(79, 201, 138, 0.14);
+    --warning: #e0a83c;
+    --warning-fg: #1a1305;
+    --warning-soft: rgba(224, 168, 60, 0.14);
+    --info: #5bc0de;
+    --info-fg: #08161b;
+    --info-soft: rgba(91, 192, 222, 0.14);
+
+    --fav: #f0567a;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+    --shadow-3: 0 8px 28px rgba(0, 0, 0, 0.55);
   }
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Dark-mode dropdown lists (used in tag search modals)
-   These appear in TagListView, TagImplicationsView, etc.
+   Base
    ═══════════════════════════════════════════════════════════ */
 
-@media (prefers-color-scheme: dark) {
-  .dropdown-list {
-    border-color: #3d4358;
-    background-color: #1a1d27;
-  }
+/* Bulma only sets the family on `body`, so anything outside that cascade
+   (and the document default) fell back to Times New Roman. */
+html {
+  font-family: var(--font-sans);
+  background-color: var(--surface-0);
+}
 
-  .dropdown-item:hover,
-  .dropdown-item.is-active {
-    background-color: #2e3346;
+body {
+  font-family: var(--font-sans);
+  font-size: var(--t-base);
+  line-height: var(--lh-normal);
+  color: var(--text-1);
+  background-color: var(--surface-0);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+code,
+pre,
+.is-mono {
+  font-family: var(--font-mono);
+}
+
+code {
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+}
+
+hr {
+  background-color: var(--border);
+  height: 1px;
+  margin: var(--sp-4) 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Density — Bulma's block defaults are magazine-sized
+   `.section` shipped 48px on every side and `.footer` 48/24/96,
+   which cost ~200px of vertical space and 96px of horizontal
+   space on a phone.
+   ═══════════════════════════════════════════════════════════ */
+
+.section {
+  padding: var(--sp-3) var(--sp-4);
+}
+
+@media screen and (min-width: 769px) {
+  .section {
+    padding: var(--sp-4) var(--sp-5);
   }
+}
+
+.footer {
+  background-color: var(--surface-1);
+  color: var(--text-3);
+  font-size: var(--t-sm);
+  padding: var(--sp-4) var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+
+.footer a {
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.footer a:hover {
+  color: var(--text-1);
+}
+
+.footer .content p:not(:last-child) {
+  margin-bottom: var(--sp-1);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Typography — a scale that is actually used.
+   Page titles used to be whichever of .title / .title.is-4 the
+   view happened to pick.
+   ═══════════════════════════════════════════════════════════ */
+
+.title {
+  color: var(--text-1);
+  font-weight: 650;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+}
+
+.title:not(.is-1):not(.is-2):not(.is-3):not(.is-4):not(.is-5):not(.is-6) {
+  font-size: var(--t-xl);
+}
+.title.is-1 {
+  font-size: 2rem;
+}
+.title.is-2 {
+  font-size: 1.75rem;
+}
+.title.is-3 {
+  font-size: var(--t-xl);
+}
+.title.is-4 {
+  font-size: 1.375rem;
+}
+.title.is-5 {
+  font-size: var(--t-lg);
+}
+.title.is-6 {
+  font-size: var(--t-base);
+}
+
+.subtitle {
+  color: var(--text-2);
+  font-size: var(--t-base);
+}
+
+/* Bulma spaces `.icon` inside `.button` but not inside `.title`, so headings
+   rendered as "≋Category Mappings" with the glyph against the text. */
+.title .icon,
+.subtitle .icon {
+  margin-right: 0.4em;
+}
+
+.help {
+  font-size: var(--t-sm);
+  color: var(--text-3);
+}
+.help.is-danger {
+  color: var(--danger);
+}
+.help.is-success {
+  color: var(--success);
+}
+.help.is-warning {
+  color: var(--warning);
+}
+
+.label {
+  color: var(--text-1);
+  font-size: var(--t-md);
+  font-weight: 600;
+}
+
+.heading {
+  font-size: var(--t-xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Navbar
+   ═══════════════════════════════════════════════════════════ */
+
+.navbar {
+  background-color: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  min-height: var(--navbar-h);
+}
+
+.navbar-item {
+  font-size: var(--t-md);
+  color: var(--text-2);
+}
+
+/* Hover/selected styling is scoped to anchors only. Bulma also uses
+   `.navbar-item` for the plain `<div>` wrappers around the search field, the
+   toggles and the per-page select — highlighting those made five inert cells
+   look like clickable navigation.
+   No corner radius: these are full-height cells in a full-width bar, so a
+   rounded highlight floats oddly inside the bar instead of filling its slot. */
+a.navbar-item:hover {
+  background-color: var(--surface-2);
+  color: var(--text-1);
+}
+
+a.navbar-item.is-selected {
+  background-color: var(--surface-3);
+  color: var(--text-1);
+  font-weight: 550;
+}
+
+/* With infinite scroll the artwork passes under this bar continuously. The bar
+   is opaque — never translucent, because nav labels would sit on a backdrop
+   whose contrast changes with whatever thumbnail is beneath. Separation comes
+   from elevation instead, and only once there is something to sit above. */
+.navbar.is-fixed-top.is-scrolled {
+  border-bottom-color: var(--border-strong);
+  box-shadow: var(--shadow-2);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Buttons — neutral chrome.
+   Hierarchy comes from fill weight, not hue. Colour is reserved
+   for genuinely destructive or cautionary actions.
+   ═══════════════════════════════════════════════════════════ */
+
+.button {
+  font-family: inherit;
+  font-size: var(--t-md);
+  font-weight: 500;
+  height: 2.125rem;
+  border-radius: var(--r-md);
+  background-color: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-1);
+  box-shadow: none;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.button:hover:not([disabled]) {
+  background-color: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+
+.button:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.button[disabled],
+.button.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button.is-small {
+  font-size: var(--t-sm);
+  height: 1.75rem;
+}
+
+.button.is-medium {
+  font-size: var(--t-base);
+  height: 2.5rem;
+}
+
+/* Primary = the one action that matters here. Colourless, but the highest
+   contrast thing on screen, so it still wins the eye. */
+.button.is-primary {
+  background-color: var(--text-1);
+  border-color: var(--text-1);
+  color: var(--surface-0);
+}
+
+.button.is-primary:hover:not([disabled]) {
+  background-color: var(--text-2);
+  border-color: var(--text-2);
+  color: var(--surface-0);
+}
+
+/* Quiet: secondary actions that shouldn't compete. */
+.button.is-ghost,
+.button.is-light {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+  text-decoration: none;
+}
+
+.button.is-ghost:hover:not([disabled]),
+.button.is-light:hover:not([disabled]) {
+  background-color: var(--surface-2);
+  color: var(--text-1);
+}
+
+.button.is-danger {
+  background-color: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-fg);
+}
+.button.is-danger:hover:not([disabled]) {
+  background-color: color-mix(in srgb, var(--danger) 85%, black);
+  border-color: color-mix(in srgb, var(--danger) 85%, black);
+  color: var(--danger-fg);
+}
+
+.button.is-warning {
+  background-color: var(--warning);
+  border-color: var(--warning);
+  color: var(--warning-fg);
+}
+.button.is-warning:hover:not([disabled]) {
+  background-color: color-mix(in srgb, var(--warning) 85%, black);
+  border-color: color-mix(in srgb, var(--warning) 85%, black);
+  color: var(--warning-fg);
+}
+
+.button.is-info {
+  background-color: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+
+.button.is-danger.is-outlined {
+  background-color: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.button.is-danger.is-outlined:hover:not([disabled]) {
+  background-color: var(--danger-soft);
+  color: var(--danger);
+}
+
+.button.is-warning.is-outlined {
+  background-color: transparent;
+  border-color: var(--warning);
+  color: var(--warning);
+}
+.button.is-warning.is-outlined:hover:not([disabled]) {
+  background-color: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Favourite is its own affordance — not a state, not a category. */
+.button.is-fav {
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--fav) 45%, transparent);
+  color: var(--fav);
+}
+.button.is-fav:hover:not([disabled]) {
+  background-color: color-mix(in srgb, var(--fav) 12%, transparent);
+  color: var(--fav);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Form controls
+   ═══════════════════════════════════════════════════════════ */
+
+.input,
+.textarea,
+.select select {
+  background-color: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: var(--t-md);
+  box-shadow: none;
+}
+
+.input,
+.select select {
+  height: 2.125rem;
+}
+
+.input:hover,
+.textarea:hover,
+.select select:hover {
+  border-color: var(--border-strong);
+}
+
+.input:focus,
+.textarea:focus,
+.select select:focus,
+.input:focus-visible,
+.textarea:focus-visible,
+.select select:focus-visible {
+  border-color: var(--focus);
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-3);
+}
+
+.select::after {
+  border-color: var(--text-3);
+}
+
+.checkbox,
+.radio {
+  font-size: var(--t-md);
+  color: var(--text-2);
+}
+
+.checkbox:hover,
+.radio:hover {
+  color: var(--text-1);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Tables — denser. Rows were 50px for a single line of text.
+   ═══════════════════════════════════════════════════════════ */
+
+.table {
+  background-color: transparent;
+  color: var(--text-2);
+  font-size: var(--t-md);
+}
+
+.table th {
+  color: var(--text-3);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-2) var(--sp-3);
+  white-space: nowrap;
+}
+
+.table td {
+  border-bottom: 1px solid var(--border);
+  border-top: none;
+  padding: var(--sp-2) var(--sp-3);
+  vertical-align: middle;
+}
+
+.table thead th {
+  border-bottom-color: var(--border-strong);
+}
+
+.table.is-striped tbody tr:nth-child(even) {
+  background-color: transparent;
+}
+
+.table.is-hoverable tbody tr:hover {
+  background-color: var(--surface-1);
+}
+
+.table .is-numeric {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Panels
+   ═══════════════════════════════════════════════════════════ */
+
+.box,
+.card {
+  background-color: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  color: var(--text-2);
+}
+
+.card-footer,
+.card-footer-item {
+  border-color: var(--border);
+  color: var(--text-2);
+  font-size: var(--t-sm);
+}
+
+/* Bulma's `.notification` is deliberately not styled here — inline alerts go
+   through `AppAlert`, which draws its severity from the same tokens as the
+   toasts. Styling `.notification` again would reintroduce the ad-hoc, framework-
+   palette banners AppAlert replaced. Field validation stays on `.help.is-danger`
+   beside its input. */
+
+/* ═══════════════════════════════════════════════════════════
+   Breadcrumb — kept (it earns its place on nested pages), but it
+   no longer occupies a 48px band of 16px text above every page.
+   ═══════════════════════════════════════════════════════════ */
+
+.breadcrumb {
+  font-size: var(--t-sm);
+}
+
+.breadcrumb a {
+  color: var(--text-3);
+  padding: 0 var(--sp-2);
+}
+
+.breadcrumb a:hover {
+  color: var(--text-1);
+}
+
+.breadcrumb li.is-active a {
+  color: var(--text-1);
+  font-weight: 550;
+}
+
+.breadcrumb li + li::before {
+  color: var(--border-strong);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Pagination
+   ═══════════════════════════════════════════════════════════ */
+
+.pagination {
+  font-size: var(--t-md);
+}
+
+.pagination-link,
+.pagination-previous,
+.pagination-next {
+  background-color: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  min-width: 2.125rem;
+  height: 2.125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-link:hover,
+.pagination-previous:hover,
+.pagination-next:hover {
+  background-color: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+
+.pagination-link.is-current {
+  background-color: var(--text-1);
+  border-color: var(--text-1);
+  color: var(--surface-0);
+}
+
+.pagination-ellipsis {
+  color: var(--text-3);
+}
+
+.pagination-previous.is-disabled,
+.pagination-next.is-disabled {
+  color: var(--text-3);
+  border-color: var(--border);
+  background-color: transparent;
+  cursor: not-allowed;
+}
+
+.pagination-previous.is-disabled:hover,
+.pagination-next.is-disabled:hover {
+  border-color: var(--border);
+  color: var(--text-3);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Tag category chips
+
+   `tag--<hue>` only. These never carry state, and no semantic
+   token appears in this block.
+   ═══════════════════════════════════════════════════════════ */
+
+.tag:not(body) {
+  background-color: var(--surface-2);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: var(--t-sm);
+  height: auto;
+  min-height: 1.6rem;
+  padding: 0.1em 0.55em;
+}
+
+.tag.is-medium:not(body) {
+  font-size: var(--t-md);
+  min-height: 1.8rem;
+}
+
+.tag.is-small:not(body) {
+  font-size: var(--t-xs);
+  min-height: 1.4rem;
+}
+
+.tag--rose:not(body) {
+  background-color: var(--tag-rose);
+  color: var(--tag-ink);
+}
+.tag--amber:not(body) {
+  background-color: var(--tag-amber);
+  color: var(--tag-ink);
+}
+.tag--emerald:not(body) {
+  background-color: var(--tag-emerald);
+  color: var(--tag-ink);
+}
+.tag--sky:not(body) {
+  background-color: var(--tag-sky);
+  color: var(--tag-ink);
+}
+.tag--violet:not(body) {
+  background-color: var(--tag-violet);
+  color: var(--tag-ink);
+}
+.tag--teal:not(body) {
+  background-color: var(--tag-teal);
+  color: var(--tag-ink);
+}
+.tag--orange:not(body) {
+  background-color: var(--tag-orange);
+  color: var(--tag-ink);
+}
+.tag--lime:not(body) {
+  background-color: var(--tag-lime);
+  color: var(--tag-ink);
+}
+
+/* General holds the overwhelming majority of tags, so it stays the quietest
+   chip — but it is still a chip. A transparent fill made it read as loose text
+   with a hairline around it rather than as a tag. */
+.tag--neutral:not(body) {
+  background-color: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  color: var(--text-1);
+}
+
+/* Filled chips need dark delete glyphs; the outline chip needs a light one. */
+.tag--rose .delete::before,
+.tag--rose .delete::after,
+.tag--amber .delete::before,
+.tag--amber .delete::after,
+.tag--emerald .delete::before,
+.tag--emerald .delete::after,
+.tag--sky .delete::before,
+.tag--sky .delete::after,
+.tag--violet .delete::before,
+.tag--violet .delete::after,
+.tag--teal .delete::before,
+.tag--teal .delete::after,
+.tag--orange .delete::before,
+.tag--orange .delete::after,
+.tag--lime .delete::before,
+.tag--lime .delete::after {
+  background-color: var(--tag-ink);
+}
+
+/* Matching text colours, for places that colour a tag name inline. */
+.tag-text--rose {
+  color: var(--tag-rose);
+}
+.tag-text--amber {
+  color: var(--tag-amber);
+}
+.tag-text--emerald {
+  color: var(--tag-emerald);
+}
+.tag-text--sky {
+  color: var(--tag-sky);
+}
+.tag-text--violet {
+  color: var(--tag-violet);
+}
+.tag-text--teal {
+  color: var(--tag-teal);
+}
+.tag-text--orange {
+  color: var(--tag-orange);
+}
+.tag-text--lime {
+  color: var(--tag-lime);
+}
+.tag-text--neutral {
+  color: var(--text-2);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Portalled overlay surfaces
+
+   These MUST live here rather than in a component's `<style scoped>`.
+   Reka renders the combobox dropdown and the dropdown menu through a Teleport,
+   and Vue has no root element on this side of that boundary to stamp the
+   `data-v-*` scope id onto — so scoped rules silently never match and the
+   surface renders transparent, unbordered and z-index: auto. (Dialog is the
+   exception: DialogContent/DialogOverlay do carry the scope id, so AppDialog's
+   scoped styles are fine.)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Tag combobox dropdown (TagMultiSelect) ─────────────── */
+
+.tag-dropdown {
+  z-index: 62;
+  /* Match the field it belongs to, so it reads as one control. Reka publishes
+     the anchor's width on the content element when `position="popper"`. */
+  width: var(--reka-combobox-trigger-width);
+  max-height: 250px;
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+}
+
+.tag-dropdown-item {
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  outline: none;
+}
+
+.tag-dropdown-item[data-highlighted] {
+  background: var(--surface-2);
+}
+
+.tag-dropdown-footer {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: var(--t-sm);
+  color: var(--text-3);
+}
+
+/* ── Lightbox (AppLightbox) ─────────────────────────────── */
+
+.lb-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 70;
+}
+
+.lb {
+  position: fixed;
+  inset: 0;
+  z-index: 71;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.lb-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.lb-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  cursor: zoom-out;
+}
+
+.lb-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: default;
+}
+
+.lb-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--t-sm);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.lb-caption {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-link {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.lb-close {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--r-md);
+  color: rgba(255, 255, 255, 0.9);
+  font: inherit;
+  font-size: var(--t-sm);
+  cursor: pointer;
+}
+
+.lb-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Tooltip (AppTooltip) ───────────────────────────────── */
+
+.tip {
+  z-index: 63;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-2);
+  color: var(--text-1);
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  max-width: 18rem;
+}
+
+/* ── Toast (ToastContainer) ─────────────────────────────── */
+
+.toast-viewport {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  z-index: 64;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(24rem, 100vw - 2 * var(--sp-4));
+  margin: 0;
+  padding: var(--sp-4);
+  list-style: none;
+  outline: none;
+  /* The viewport is a large fixed rectangle that is mostly empty, so it must
+     never intercept clicks meant for the page beneath it. */
+  pointer-events: none;
+}
+
+.toast {
+  display: grid;
+  /* ...but the toasts themselves stay clickable. Reka's modal Dialog sets
+     `pointer-events: none` on <body> while it is open, which the viewport and
+     toasts inherit — that left Dismiss and Undo dead on any toast raised from
+     inside a dialog. Since every response message is a toast, this is the
+     difference between the feedback being usable there and not. */
+  pointer-events: auto;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: 'icon title close' 'icon body close' 'icon action close';
+  column-gap: var(--sp-3);
+  row-gap: 2px;
+  align-items: start;
+  padding: var(--sp-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  /* The severity reads as a stripe, so colour carries meaning without tinting
+     the whole surface — which is what made the old toasts a second palette. */
+  border-left: 3px solid var(--text-3);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+  font-size: var(--t-md);
+  color: var(--text-2);
+}
+
+.toast[data-severity='success'] {
+  border-left-color: var(--success);
+}
+.toast[data-severity='error'] {
+  border-left-color: var(--danger);
+}
+.toast[data-severity='warning'] {
+  border-left-color: var(--warning);
+}
+.toast[data-severity='info'] {
+  border-left-color: var(--info);
+}
+
+.toast-icon {
+  grid-area: icon;
+  font-size: var(--t-base);
+  line-height: 1.5;
+}
+.toast[data-severity='success'] .toast-icon {
+  color: var(--success);
+}
+.toast[data-severity='error'] .toast-icon {
+  color: var(--danger);
+}
+.toast[data-severity='warning'] .toast-icon {
+  color: var(--warning);
+}
+.toast[data-severity='info'] .toast-icon {
+  color: var(--info);
+}
+
+.toast-title {
+  grid-area: title;
+  font-size: var(--t-md);
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.toast-body {
+  grid-area: body;
+  margin: 0;
+  color: var(--text-2);
+}
+
+.toast-action {
+  grid-area: action;
+  justify-self: start;
+  margin-top: var(--sp-1);
+  padding: 2px var(--sp-2);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--t-sm);
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  background: var(--surface-2);
+}
+
+.toast-close {
+  grid-area: close;
+  align-self: start;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.toast-close:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+/* ── Overflow menu (AppMenu / AppMenuItem) ──────────────── */
+
+.menu-surface {
+  min-width: 11rem;
+  padding: var(--sp-1);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+  z-index: 62;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: var(--t-md);
+  color: var(--text-1);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+/* Reka drives hover and keyboard focus through the same attribute, so the
+   pointer and the arrow keys land on identical styling. */
+.menu-item[data-highlighted] {
+  background: var(--surface-2);
+}
+
+.menu-item.is-danger {
+  color: var(--danger);
+}
+
+.menu-item.is-danger[data-highlighted] {
+  background: var(--danger-soft);
+}
+
+.menu-item-icon {
+  width: 1em;
+  text-align: center;
+  opacity: 0.8;
+  flex: none;
 }
 
 /* ═══════════════════════════════════════════════════════════
    Layout
    ═══════════════════════════════════════════════════════════ */
 
-/* Gallery pages use a wider content column than Bulma's fixed `.container`
-   (~1344px on fullhd) so the media wall fills large / high-DPI displays
-   instead of stranding empty side margins. Capped so tiles don't sprawl on
-   ultrawide monitors. */
+/* The media wall fills large displays instead of stranding side margins,
+   capped so tiles don't sprawl on ultrawide monitors. */
 .gallery-container {
   width: 100%;
   max-width: 2200px;
   margin-inline: auto;
-  /* No horizontal padding here — the wrapping `.section` already supplies it.
-     Adding more double-pads on mobile and costs a grid column. */
 }
 
-/* Detail pages (e.g. media + tags) opt into a wider column than Bulma's fixed
-   `.container` (~1344px) so the image and side panel use the available width
-   instead of stranding empty margins, but capped tighter than the media wall. */
-.container.is-wide {
+/* Bulma's `.container` width rules (max-width: 960px at ≥1024px) out-specify a
+   plain `width: 100%`, so `.is-wide` has to be explicit at every breakpoint or
+   detail pages get stranded at 928px on a 1440px display. */
+.container.is-wide,
+.container.is-wide:not(.is-max-tablet):not(.is-max-desktop) {
   width: 100%;
   max-width: 1500px;
   margin-inline: auto;
 }
 
-.parent {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-content: flex-start;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  margin: 0 auto;
+/* The shared media grid. Tracks are `1fr`, not a fixed max: `auto-fill` sizes
+   the track count using the *maximum*, so `minmax(150px, 200px)` always made
+   200px columns and left the remainder as dead gutter — one single column on a
+   375px phone. Thumbnails stay letterboxed; that's booru convention, and
+   Danbooru does the same. */
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-2);
 }
-.parent::after {
-  content: '';
-  flex: auto;
+
+@media screen and (min-width: 769px) {
+  .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: var(--sp-3);
+  }
 }
-.child {
-  margin: 0 1rem 2rem 1rem;
-}
-.tags-page-img {
-  max-width: fit-content;
-  filter: drop-shadow(3px 3px 5px black);
-  transition: filter 0.3s ease-in-out;
-}
-.tags-page-img img,
-.tags-page-img video {
-  transition: filter 0.3s ease-in-out;
-}
+
 .sticky-footer {
   display: flex;
   min-height: 100vh;
   flex-direction: column;
 }
+
+.tags-page-img {
+  max-width: fit-content;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
+}
+
 .thumb-blur {
   filter: blur(10px) grayscale(0.5);
   transition: filter 0.3s ease-in-out;
 }
-.gallery-image {
-  transition: filter 0.3s ease-in-out;
-}
+
 .loading-container {
   display: flex;
   justify-content: center;
@@ -725,6 +1192,7 @@
   min-height: 50vh;
   animation: delayed-fade-in 0.3s ease-in-out both;
 }
+
 @keyframes delayed-fade-in {
   0%,
   80% {
@@ -735,27 +1203,6 @@
   }
 }
 
-/* Gallery content: hidden while thumbnails load, fades in when ready */
-.gallery-content {
-  opacity: 0;
-  transition: opacity 0.4s ease-in-out;
-  pointer-events: none;
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-}
-.gallery-content.gallery-visible {
-  opacity: 1;
-  pointer-events: auto;
-  position: static;
-  width: auto;
-  height: auto;
-  overflow: visible;
-  clip: auto;
-}
-
 /* Page route transitions */
 .page-fade-enter-active,
 .page-fade-leave-active {
@@ -764,4 +1211,14 @@
 .page-fade-enter-from,
 .page-fade-leave-to {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

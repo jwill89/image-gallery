@@ -9,6 +9,8 @@ import { endpoints } from '../api/endpoints'
 import type { MediaItem } from '../types'
 import GalleryCard from '../components/GalleryCard.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import PageHeader from '../components/PageHeader.vue'
+import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
 const api = useApi()
@@ -63,46 +65,40 @@ watch(() => favorites.count, loadFavorites)
 <template>
   <section class="section">
     <div class="gallery-container">
-      <h1 class="title">
-        <span class="icon mr-2"><i class="fa-solid fa-heart" /></span>
-        Favorites
-        <span v-if="!isEmpty" class="tag is-medium is-rounded ml-3">{{ favorites.count }}</span>
-      </h1>
+      <PageHeader title="Favorites" :meta="isEmpty ? '' : `${favorites.count} saved`" />
 
-      <div class="notification is-warning is-light favorites-disclaimer">
-        <span class="icon mr-2"><i class="fa-solid fa-circle-info" /></span>
+      <!-- Was a full-width amber notification on every visit, including when
+           there are no favorites to lose. Demoted to a footnote. -->
+      <p class="favorites-note">
+        <span class="icon is-small"><i class="fa-solid fa-circle-info" /></span>
         <span>
-          Favorites are saved in your browser's local storage and are not stored on the server.
-          Clearing your browser data, switching browsers, or using a private/incognito window will
-          reset them.
+          Favorites live in this browser's local storage, not on the server — clearing browser data
+          or switching browsers resets them.
         </span>
-      </div>
+      </p>
 
       <LoadingSpinner v-if="loading && items.length === 0" />
 
-      <div v-else-if="isEmpty" class="has-text-centered py-6">
-        <span class="icon is-large has-text-grey-light">
-          <i class="fa-regular fa-heart fa-3x" />
-        </span>
-        <p class="is-size-5 has-text-grey mt-4">No favorites yet.</p>
-        <p class="has-text-grey-light mt-2">
-          Click the <i class="fa-regular fa-heart" /> on any thumbnail or media page to add it here.
-        </p>
-      </div>
+      <EmptyState
+        v-else-if="isEmpty"
+        icon="fa-regular fa-heart"
+        title="No favorites yet."
+        hint="Click the heart on any thumbnail or media page to add it here."
+      />
 
-      <div v-else-if="loadFailed" class="has-text-centered py-6">
-        <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-circle-exclamation fa-3x" />
-        </span>
-        <p class="is-size-5 has-text-grey mt-4">Could not load favorites.</p>
-        <button class="button is-indigo mt-4" @click="loadFavorites">
+      <EmptyState
+        v-else-if="loadFailed"
+        icon="fa-solid fa-circle-exclamation"
+        title="Could not load favorites."
+      >
+        <button class="button" @click="loadFavorites">
           <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
-      </div>
+      </EmptyState>
 
       <div v-else>
-        <div class="gallery-grid">
+        <div class="media-grid">
           <GalleryCard
             v-for="item in items"
             :key="item.media_id"
@@ -116,30 +112,13 @@ watch(() => favorites.count, loadFavorites)
 </template>
 
 <style scoped>
-.favorites-disclaimer {
+/* The grid lives in style.css as `.media-grid`, shared with GalleryView. */
+.favorites-note {
   display: flex;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  font-size: 0.875rem;
-  margin-bottom: 1.25rem;
-}
-
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 200px));
-  gap: 8px;
-  justify-content: center;
-}
-
-@media (min-width: 769px) {
-  .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 200px));
-  }
-}
-
-@media (min-width: 1200px) {
-  .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(170px, 200px));
-  }
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--t-sm);
+  color: var(--text-3);
+  margin-bottom: var(--sp-4);
 }
 </style>

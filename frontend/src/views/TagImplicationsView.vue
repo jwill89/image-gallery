@@ -12,6 +12,10 @@ import { endpoints } from '../api/endpoints'
 import type { TagListItem, TagImplication } from '../types'
 import { getTextClassByName, getCategoryClassByName } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import EmptyState from '../components/EmptyState.vue'
+import AppDialog from '../components/AppDialog.vue'
+import AppTooltip from '../components/AppTooltip.vue'
+import PageHeader from '../components/PageHeader.vue'
 
 const props = defineProps<{
   tagId: number
@@ -48,6 +52,7 @@ const impliedTagId = ref<number | null>(null)
 const implHelp = ref('')
 const implHelpClass = ref('')
 const implLoading = ref(false)
+const removeTarget = ref<{ tagId: number; impliedTagId: number; label: string } | null>(null)
 
 const impliedOptions = computed(() => {
   if (!impliedSearch.value.trim()) return []
@@ -131,8 +136,16 @@ async function submitImplication() {
   }
 }
 
-async function removeImplication(tagId: number, impliedTagId: number) {
-  if (!confirm('Remove this implication rule?')) return
+/** Removing an implication is destructive and silent, so it gets a real confirm. */
+function askRemoveImplication(tagId: number, impliedTagId: number, label: string) {
+  removeTarget.value = { tagId, impliedTagId, label }
+}
+
+async function removeImplication() {
+  const target = removeTarget.value
+  if (!target) return
+  const { tagId, impliedTagId } = target
+  removeTarget.value = null
 
   try {
     await api.del(endpoints.tagImplications.byPair(tagId, impliedTagId))
@@ -151,46 +164,26 @@ onMounted(loadData)
     <div class="container">
       <LoadingSpinner v-if="loading" />
 
-      <div v-else-if="loadFailed || !tagInfo" class="has-text-centered py-6">
-        <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-link fa-3x" />
-        </span>
-        <p class="is-size-5 has-text-grey mt-4">
-          {{ loadFailed ? 'Could not load tag data. Please try again.' : 'Tag not found.' }}
-        </p>
-        <button v-if="loadFailed" class="button is-indigo mt-4" @click="loadData">
+      <EmptyState
+        v-else-if="loadFailed || !tagInfo"
+        icon="fa-solid fa-link"
+        :title="loadFailed ? 'Could not load tag data.' : 'Tag not found.'"
+      >
+        <button v-if="loadFailed" class="button" @click="loadData">
           <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
-      </div>
+      </EmptyState>
 
       <template v-else>
-        <!-- Header -->
-        <div class="level mb-4">
-          <div class="level-left">
-            <div class="level-item">
-              <h1 class="title is-4 mb-0">
-                <span :class="getTextClassByName(tagInfo.category_name)">{{
-                  tagInfo.tag_name
-                }}</span>
-                <span
-                  class="tag is-medium ml-2"
-                  :class="getCategoryClassByName(tagInfo.category_name)"
-                >
-                  {{ tagInfo.category_name }}
-                </span>
-              </h1>
-            </div>
-          </div>
-          <div v-if="authenticated" class="level-right">
-            <div class="level-item">
-              <button class="button is-primary" @click="openModal">
-                <span class="icon"><i class="fa-solid fa-plus" /></span>
-                <span>Add Implication</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <PageHeader :title="tagInfo.tag_name" :meta="tagInfo.category_name ?? ''">
+          <template v-if="authenticated" #actions>
+            <button class="button is-primary" @click="openModal">
+              <span class="icon"><i class="fa-solid fa-plus" /></span>
+              <span>Add Implication</span>
+            </button>
+          </template>
+        </PageHeader>
 
         <p class="mb-5 has-text-grey">
           When this tag is added to media, all implied tags below are automatically added too.
@@ -217,17 +210,21 @@ onMounted(loadData)
                 <router-link
                   :to="{ name: 'tag-implications', params: { tagId: impl.implied_tag_id } }"
                 >
-                  <span class="tag is-medium is-white">{{ impl.implied_tag_name }}</span>
+                  <span class="tag is-medium tag--neutral">{{ impl.implied_tag_name }}</span>
                 </router-link>
               </td>
               <td v-if="authenticated">
-                <button
-                  class="button is-small is-danger is-outlined"
-                  title="Remove"
-                  @click="removeImplication(impl.tag_id, impl.implied_tag_id)"
-                >
-                  <span class="icon"><i class="fa-solid fa-trash" /></span>
-                </button>
+                <AppTooltip label="Remove implication">
+                  <button
+                    class="button is-small is-danger is-outlined"
+                    aria-label="Remove implication"
+                    @click="
+                      askRemoveImplication(impl.tag_id, impl.implied_tag_id, impl.implied_tag_name)
+                    "
+                  >
+                    <span class="icon"><i class="fa-solid fa-trash" /></span>
+                  </button>
+                </AppTooltip>
               </td>
             </tr>
           </tbody>
@@ -255,17 +252,19 @@ onMounted(loadData)
             <tr v-for="impl in impliedByOthers" :key="impl.tag_id">
               <td>
                 <router-link :to="{ name: 'tag-implications', params: { tagId: impl.tag_id } }">
-                  <span class="tag is-medium is-white">{{ impl.tag_name }}</span>
+                  <span class="tag is-medium tag--neutral">{{ impl.tag_name }}</span>
                 </router-link>
               </td>
               <td v-if="authenticated">
-                <button
-                  class="button is-small is-danger is-outlined"
-                  title="Remove"
-                  @click="removeImplication(impl.tag_id, impl.implied_tag_id)"
-                >
-                  <span class="icon"><i class="fa-solid fa-trash" /></span>
-                </button>
+                <AppTooltip label="Remove implication">
+                  <button
+                    class="button is-small is-danger is-outlined"
+                    aria-label="Remove implication"
+                    @click="askRemoveImplication(impl.tag_id, impl.implied_tag_id, impl.tag_name)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-trash" /></span>
+                  </button>
+                </AppTooltip>
               </td>
             </tr>
           </tbody>
@@ -273,86 +272,97 @@ onMounted(loadData)
         <p v-else class="has-text-centered has-text-grey py-4">No other tags imply this tag.</p>
       </template>
 
-      <!-- Add Implication Modal -->
-      <div class="modal" :class="{ 'is-active': showModal }">
-        <div class="modal-background" @click="closeModal" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">
-              <strong>Add Implication for {{ tagInfo?.tag_name }}</strong>
-            </p>
-            <button class="delete" aria-label="close" @click="closeModal" />
-          </header>
-          <section class="modal-card-body">
-            <p class="mb-4">
-              When <strong>{{ tagInfo?.tag_name }}</strong> is added to a media item, the selected
-              tag will be automatically added too.
-            </p>
-            <div class="field">
-              <label class="label">Implied Tag</label>
-              <div class="control">
-                <input
-                  v-model="impliedSearch"
-                  class="input"
-                  type="text"
-                  placeholder="Search for a tag..."
-                />
-              </div>
-              <div v-if="impliedOptions.length > 0" class="dropdown-list">
-                <a
-                  v-for="t in impliedOptions"
-                  :key="t.tag_id"
-                  class="dropdown-item"
-                  :class="{ 'is-active': impliedTagId === t.tag_id }"
-                  @click="selectImplied(t)"
-                >
-                  <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
-                  <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">
-                    {{ t.category_name }}
-                  </span>
-                </a>
-              </div>
-            </div>
-            <p v-if="implHelp" class="help" :class="implHelpClass">
-              {{ implHelp }}
-            </p>
-          </section>
-          <footer class="modal-card-foot">
-            <div class="buttons">
-              <button
-                class="button is-primary"
-                :class="{ 'is-loading': implLoading }"
-                @click="submitImplication"
-              >
-                Add Implication
-              </button>
-              <button class="button" @click="closeModal">Cancel</button>
-            </div>
-          </footer>
+      <AppDialog
+        :open="showModal"
+        :title="`Add Implication for ${tagInfo?.tag_name ?? ''}`"
+        @update:open="!$event && closeModal()"
+      >
+        <p class="mb-4">
+          When <strong>{{ tagInfo?.tag_name }}</strong> is added to a media item, the selected tag
+          will be automatically added too.
+        </p>
+        <div class="field">
+          <label class="label">Implied Tag</label>
+          <div class="control">
+            <input
+              v-model="impliedSearch"
+              class="input"
+              type="text"
+              placeholder="Search for a tag..."
+            />
+          </div>
+          <div v-if="impliedOptions.length > 0" class="dropdown-list">
+            <a
+              v-for="t in impliedOptions"
+              :key="t.tag_id"
+              class="dropdown-item"
+              :class="{ 'is-active': impliedTagId === t.tag_id }"
+              @click="selectImplied(t)"
+            >
+              <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
+              <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">
+                {{ t.category_name }}
+              </span>
+            </a>
+          </div>
         </div>
-      </div>
+        <p v-if="implHelp" class="help" :class="implHelpClass">
+          {{ implHelp }}
+        </p>
+
+        <template #footer>
+          <button
+            class="button is-primary"
+            :class="{ 'is-loading': implLoading }"
+            @click="submitImplication"
+          >
+            Add Implication
+          </button>
+          <button class="button is-ghost" @click="closeModal">Cancel</button>
+        </template>
+      </AppDialog>
+
+      <AppDialog
+        :open="removeTarget !== null"
+        title="Remove this implication?"
+        destructive
+        @update:open="!$event && (removeTarget = null)"
+      >
+        <p>
+          <strong>{{ removeTarget?.label }}</strong> will no longer be applied automatically.
+          Existing media keep the tags they already have.
+        </p>
+
+        <template #footer>
+          <button class="button is-danger" @click="removeImplication">Remove</button>
+          <button class="button is-ghost" @click="removeTarget = null">Cancel</button>
+        </template>
+      </AppDialog>
     </div>
   </section>
 </template>
 
 <style scoped>
 .dropdown-list {
-  border: 1px solid #dbdbdb;
-  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
   max-height: 200px;
   overflow-y: auto;
-  margin-top: 0.25rem;
+  margin-top: var(--sp-1);
 }
 
 .dropdown-item {
   display: flex;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  padding: var(--sp-2) var(--sp-3);
   cursor: pointer;
+  font-size: var(--t-md);
+  color: var(--text-1);
 }
 
 .dropdown-item:hover,
 .dropdown-item.is-active {
-  background-color: #f5f5f5;
+  background-color: var(--surface-2);
 }
 </style>

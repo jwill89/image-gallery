@@ -559,7 +559,9 @@ class MediaController extends AbstractController
         responses: [
             new OA\Response(response: 200, description: 'Import result', content: new OA\JsonContent(ref: '#/components/schemas/DanbooruFetchResult')),
             new OA\Response(response: 404, description: 'MediaDoesNotExist / NotFoundOnDanbooru', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
-            new OA\Response(response: 500, description: 'DanbooruNotConfigured', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 429, description: 'DanbooruRateLimited', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'DanbooruNotConfigured / DanbooruAuthFailed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 503, description: 'DanbooruUnreachable / DanbooruUnavailable', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
         ]
     )]
     public function fetchDanbooruTags(Request $request, Response $response, array $args): Response
@@ -588,6 +590,51 @@ class MediaController extends AbstractController
         }
 
         if (!$result['found']) {
+            // A failed lookup isn't necessarily a miss. Reporting an expired API
+            // key or a rate limit as "not found on Danbooru" sends you looking
+            // for the wrong problem — and looks identical on every single item.
+            $failure = $result['failure'] ?? null;
+            if ($failure !== null) {
+                $this->logger->warning('Danbooru lookup failed', [
+                    'media_id' => $mediaId,
+                    'reason' => $failure,
+                ]);
+                // Deliberately NOT 502/504. The site sits behind Cloudflare, which
+                // treats gateway-class codes as "the origin is broken" and replaces
+                // the response with its own HTML error page — the JSON message below
+                // never reaches the browser. 429/500/503 pass through untouched.
+                return match ($failure) {
+                    DanbooruTagger::FAILURE_AUTH => $this->error(
+                        $response,
+                        'DanbooruAuthFailed',
+                        500,
+                        'Danbooru rejected the request. Check DANBOORU_LOGIN and DANBOORU_API_KEY '
+                        . 'in the server .env, and the IP allowlist on the API key — keys are '
+                        . 'revoked when the account password changes, and a new outbound address '
+                        . '(enabling IPv6 gives the server one) is refused until it is allowlisted.'
+                    ),
+                    DanbooruTagger::FAILURE_RATE_LIMIT => $this->error(
+                        $response,
+                        'DanbooruRateLimited',
+                        429,
+                        'Danbooru is rate-limiting this account. Wait a minute and try again.'
+                    ),
+                    DanbooruTagger::FAILURE_NETWORK => $this->error(
+                        $response,
+                        'DanbooruUnreachable',
+                        503,
+                        'Could not reach Danbooru from the server — DNS, outbound HTTPS or '
+                        . 'the TLS certificate bundle.'
+                    ),
+                    default => $this->error(
+                        $response,
+                        'DanbooruUnavailable',
+                        503,
+                        'Danbooru returned an error. Try again shortly.'
+                    ),
+                };
+            }
+
             return $this->error(
                 $response,
                 'NotFoundOnDanbooru',

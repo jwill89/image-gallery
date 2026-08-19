@@ -180,7 +180,7 @@ final class MediaStorageTest extends DatabaseTestCase
         $tagged = $this->insert($storage, 'tagged.jpg', 'h1');
         $this->insert($storage, 'untagged.jpg', 'h2');
 
-        $db->exec("INSERT INTO tag_categories (category_name, category_short) VALUES ('General', 'gen')");
+        $db->exec("INSERT INTO tag_categories (category_name) VALUES ('General')");
         $db->exec("INSERT INTO tags (category_id, tag_name) VALUES (1, 'sky')");
         $db->prepare('INSERT INTO media_tags (media_id, tag_id) VALUES (:m, 1)')
             ->execute([':m' => $tagged->media_id]);

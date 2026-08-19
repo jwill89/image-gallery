@@ -7,6 +7,12 @@ import { endpoints } from '../api/endpoints'
 import type { TagListItem } from '../types'
 import { getTextClassByName, getCategoryClassByName } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import EmptyState from '../components/EmptyState.vue'
+import PageHeader from '../components/PageHeader.vue'
+import PaginationBar from '../components/PaginationBar.vue'
+import AppDialog from '../components/AppDialog.vue'
+import AppMenu from '../components/AppMenu.vue'
+import AppMenuItem from '../components/AppMenuItem.vue'
 
 const api = useApi()
 const store = useGalleryStore()
@@ -343,43 +349,29 @@ onMounted(() => {
   <section class="section">
     <div class="container is-wide">
       <LoadingSpinner v-if="loading" />
-      <div v-else-if="loadFailed" class="has-text-centered py-6">
-        <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-tags fa-3x" />
-        </span>
-        <p class="is-size-5 has-text-grey mt-4">Could not load tags. Please try again.</p>
-        <button class="button is-indigo mt-4" @click="loadTags()">
+      <EmptyState v-else-if="loadFailed" icon="fa-solid fa-tags" title="Could not load tags.">
+        <button class="button" @click="loadTags()">
           <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
-      </div>
+      </EmptyState>
       <template v-else>
-        <!-- Header with New Tag button -->
-        <div class="level mb-4">
-          <div class="level-left">
-            <div class="level-item">
-              <h1 class="title is-4">Tags</h1>
-            </div>
-          </div>
-          <div v-if="authenticated" class="level-right">
-            <div class="level-item">
-              <div class="buttons">
-                <button class="button is-primary" @click="openNewTagModal">
-                  <span class="icon"><i class="fa-solid fa-plus" /></span>
-                  <span>New Tag</span>
-                </button>
-                <router-link class="button is-indigo" :to="{ name: 'tag-categories' }">
-                  <span class="icon"><i class="fa-solid fa-palette" /></span>
-                  <span>Categories</span>
-                </router-link>
-                <router-link class="button is-indigo" :to="{ name: 'danbooru-rules' }">
-                  <span class="icon"><i class="fa-solid fa-file-import" /></span>
-                  <span>Import Rules</span>
-                </router-link>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PageHeader title="Tags" :meta="`${filteredTags.length.toLocaleString()} tags`">
+          <template v-if="authenticated" #actions>
+            <button class="button is-primary" @click="openNewTagModal">
+              <span class="icon"><i class="fa-solid fa-plus" /></span>
+              <span>New Tag</span>
+            </button>
+            <router-link class="button" :to="{ name: 'tag-categories' }">
+              <span class="icon"><i class="fa-solid fa-palette" /></span>
+              <span>Categories</span>
+            </router-link>
+            <router-link class="button" :to="{ name: 'danbooru-rules' }">
+              <span class="icon"><i class="fa-solid fa-file-import" /></span>
+              <span>Import Rules</span>
+            </router-link>
+          </template>
+        </PageHeader>
 
         <!-- Search and page size -->
         <div class="field is-grouped mb-4">
@@ -461,33 +453,21 @@ onMounted(() => {
                     0
                   </router-link>
                 </td>
-                <td v-if="authenticated" class="has-text-right">
-                  <div class="buttons are-small is-right">
-                    <button
-                      class="button is-indigo"
-                      title="Edit"
-                      aria-label="Edit tag"
-                      @click="editTag(tag)"
+                <!-- One menu instead of three filled buttons per row: at 25
+                     rows that was 75 saturated chips, making the least-used
+                     control the loudest thing on the page. -->
+                <td v-if="authenticated" class="row-actions">
+                  <AppMenu :label="`Actions for ${tag.tag_name}`">
+                    <AppMenuItem icon="fa-solid fa-pen" @select="editTag(tag)">Edit</AppMenuItem>
+                    <AppMenuItem
+                      icon="fa-solid fa-arrow-right-arrow-left"
+                      @select="openMigrateModal(tag)"
+                      >Migrate…</AppMenuItem
                     >
-                      <span class="icon"><i class="fa-solid fa-pen" /></span>
-                    </button>
-                    <button
-                      class="button is-amber"
-                      title="Migrate"
-                      aria-label="Migrate tag"
-                      @click="openMigrateModal(tag)"
+                    <AppMenuItem icon="fa-solid fa-trash" danger @select="openDeleteModal(tag)"
+                      >Delete…</AppMenuItem
                     >
-                      <span class="icon"><i class="fa-solid fa-arrow-right-arrow-left" /></span>
-                    </button>
-                    <button
-                      class="button is-danger"
-                      title="Delete"
-                      aria-label="Delete tag"
-                      @click="openDeleteModal(tag)"
-                    >
-                      <span class="icon"><i class="fa-solid fa-trash" /></span>
-                    </button>
-                  </div>
+                  </AppMenu>
                 </td>
               </tr>
               <tr v-if="pagedTags.length === 0">
@@ -497,220 +477,215 @@ onMounted(() => {
           </table>
         </div>
 
-        <!-- Pagination -->
-        <nav v-if="totalFilteredPages > 1" class="pagination is-centered is-small">
-          <a
-            class="pagination-previous"
-            :class="{ 'is-disabled': currentPage <= 1 }"
-            @click.prevent="currentPage > 1 && currentPage--"
-            >Previous</a
-          >
-          <a
-            class="pagination-next"
-            :class="{ 'is-disabled': currentPage >= totalFilteredPages }"
-            @click.prevent="currentPage < totalFilteredPages && currentPage++"
-            >Next</a
-          >
-          <ul class="pagination-list">
-            <li>
-              <span class="pagination-link is-current"
-                >Page {{ currentPage }} of {{ totalFilteredPages }}</span
+        <!-- Below 768px the table becomes a list. As a table it produced 132px
+             rows, because the Actions column squeezed to 56px and stacked its
+             buttons vertically — 242px off the right edge, where you couldn't
+             see the thing setting the row height. -->
+        <ul class="tag-list">
+          <li v-for="tag in pagedTags" :key="tag.tag_id" class="tag-list-row">
+            <div class="tag-list-main">
+              <span class="tag" :class="getCategoryClassByName(tag.category_name)">
+                {{ tag.tag_name }}
+              </span>
+              <span class="tag-list-meta">
+                {{ tag.category_name }} ·
+                <router-link
+                  :to="{
+                    name: 'media-with-tags',
+                    params: { page: 1, perPage: 40, tags: tag.tag_name },
+                  }"
+                  >{{ tag.media_count.toLocaleString() }} media</router-link
+                >
+                ·
+                <router-link :to="{ name: 'tag-implications', params: { tagId: tag.tag_id } }"
+                  >{{ tag.implication_count }} implies</router-link
+                >
+              </span>
+            </div>
+            <AppMenu v-if="authenticated" :label="`Actions for ${tag.tag_name}`">
+              <AppMenuItem icon="fa-solid fa-pen" @select="editTag(tag)">Edit</AppMenuItem>
+              <AppMenuItem icon="fa-solid fa-arrow-right-arrow-left" @select="openMigrateModal(tag)"
+                >Migrate…</AppMenuItem
               >
-            </li>
-          </ul>
-        </nav>
+              <AppMenuItem icon="fa-solid fa-trash" danger @select="openDeleteModal(tag)"
+                >Delete…</AppMenuItem
+              >
+            </AppMenu>
+          </li>
+          <li v-if="pagedTags.length === 0" class="tag-list-empty">No tags found.</li>
+        </ul>
+
+        <!-- The same pager as the media grid, rather than a second one that
+             could only step one page at a time. -->
+        <PaginationBar
+          v-if="totalFilteredPages > 1"
+          class="mt-4"
+          :current-page="currentPage"
+          :total-pages="totalFilteredPages"
+          @navigate="currentPage = $event"
+        />
       </template>
 
-      <!-- New/Edit Tag Modal -->
-      <div class="modal" :class="{ 'is-active': showFormModal }">
-        <div class="modal-background" @click="closeModal" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">
-              <strong>{{ formMode === 'edit' ? 'Edit Tag' : 'New Tag' }}</strong>
-            </p>
-            <button class="delete" aria-label="close" @click="closeModal" />
-          </header>
-          <section class="modal-card-body">
-            <div class="field">
-              <label class="label">Tag Name</label>
-              <div class="control has-icons-left">
-                <input
-                  v-model="formTagName"
-                  class="input"
-                  :class="formHelpClass"
-                  type="text"
-                  placeholder="Enter tag name"
-                  @input="onTagNameInput"
-                  @keyup.enter="submitForm"
-                />
-                <span class="icon is-left">
-                  <i class="fa-solid fa-tag" />
-                </span>
-              </div>
-              <p v-if="formHelp" class="help" :class="formHelpClass">
-                {{ formHelp }}
-              </p>
-            </div>
-            <div class="field">
-              <label class="label">Category</label>
-              <div class="control">
-                <div class="select is-fullwidth">
-                  <select v-model="formCategoryId">
-                    <option value="">Select a Category</option>
-                    <option
-                      v-for="cat in store.categories"
-                      :key="cat.category_id"
-                      :value="cat.category_id"
-                    >
-                      {{ cat.category_name }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </section>
-          <footer class="modal-card-foot">
-            <div class="buttons">
-              <button class="button is-primary" @click="submitForm">
-                {{ formMode === 'edit' ? 'Save Changes' : 'Create Tag' }}
-              </button>
-              <button class="button" @click="closeModal">Cancel</button>
-            </div>
-          </footer>
+      <AppDialog
+        :open="showFormModal"
+        :title="formMode === 'edit' ? 'Edit Tag' : 'New Tag'"
+        @update:open="!$event && closeModal()"
+      >
+        <div class="field">
+          <label class="label">Tag Name</label>
+          <div class="control has-icons-left">
+            <input
+              v-model="formTagName"
+              class="input"
+              :class="formHelpClass"
+              type="text"
+              placeholder="Enter tag name"
+              @input="onTagNameInput"
+              @keyup.enter="submitForm"
+            />
+            <span class="icon is-left">
+              <i class="fa-solid fa-tag" />
+            </span>
+          </div>
+          <p v-if="formHelp" class="help" :class="formHelpClass">
+            {{ formHelp }}
+          </p>
         </div>
-      </div>
-
-      <!-- Migrate Tag Modal -->
-      <div class="modal" :class="{ 'is-active': showMigrateModal }">
-        <div class="modal-background" @click="closeMigrateModal" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">
-              <strong>Migrate Tag</strong>
-            </p>
-            <button class="delete" aria-label="close" @click="closeMigrateModal" />
-          </header>
-          <section class="modal-card-body">
-            <p class="mb-4">
-              Migrate all items tagged with
-              <strong>{{ migrateSourceTag?.tag_name }}</strong>
-              to another tag. Items that already have the target tag will simply have the source tag
-              removed.
-            </p>
-            <div class="field">
-              <label class="label">Target Tag</label>
-              <div class="control">
-                <input
-                  v-model="migrateTargetSearch"
-                  class="input"
-                  type="text"
-                  placeholder="Search for target tag..."
-                />
-              </div>
-              <div v-if="migrateTargetOptions.length > 0" class="dropdown-list">
-                <a
-                  v-for="t in migrateTargetOptions"
-                  :key="t.tag_id"
-                  class="dropdown-item"
-                  :class="{ 'is-active': migrateTargetId === t.tag_id }"
-                  @click="selectMigrateTarget(t)"
+        <div class="field">
+          <label class="label">Category</label>
+          <div class="control">
+            <div class="select is-fullwidth">
+              <select v-model="formCategoryId">
+                <option value="">Select a Category</option>
+                <option
+                  v-for="cat in store.categories"
+                  :key="cat.category_id"
+                  :value="cat.category_id"
                 >
-                  <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
-                  <span
-                    class="tag is-small ml-2"
-                    :class="getCategoryClassByName(t.category_name)"
-                    >{{ t.category_name }}</span
-                  >
-                </a>
-              </div>
+                  {{ cat.category_name }}
+                </option>
+              </select>
             </div>
-            <p v-if="migrateHelp" class="help" :class="migrateHelpClass">
-              {{ migrateHelp }}
-            </p>
-          </section>
-          <footer class="modal-card-foot">
-            <div class="buttons">
-              <button
-                class="button is-warning"
-                :class="{ 'is-loading': migrateLoading }"
-                @click="submitMigrate"
-              >
-                Migrate
-              </button>
-              <button class="button" @click="closeMigrateModal">Cancel</button>
-            </div>
-          </footer>
+          </div>
         </div>
-      </div>
 
-      <!-- Delete Tag Modal -->
-      <div class="modal" :class="{ 'is-active': showDeleteModal }">
-        <div class="modal-background" @click="closeDeleteModal" />
-        <div class="modal-card">
-          <header class="modal-card-head">
-            <p class="modal-card-title">
-              <strong>Delete Tag</strong>
-            </p>
-            <button class="delete" aria-label="close" @click="closeDeleteModal" />
-          </header>
-          <section class="modal-card-body">
-            <p class="mb-4">
-              Are you sure you want to delete
-              <strong>{{ deleteTargetTag?.tag_name }}</strong
-              >? This will remove the tag from all items.
-            </p>
-            <div class="field">
-              <label class="checkbox">
-                <input v-model="deleteMigrateFirst" type="checkbox" />
-                Migrate items to another tag before deleting
-              </label>
-            </div>
-            <div v-if="deleteMigrateFirst" class="field">
-              <label class="label">Migrate To</label>
-              <div class="control">
-                <input
-                  v-model="deleteMigrateTargetSearch"
-                  class="input"
-                  type="text"
-                  placeholder="Search for target tag..."
-                />
-              </div>
-              <div v-if="deleteMigrateTargetOptions.length > 0" class="dropdown-list">
-                <a
-                  v-for="t in deleteMigrateTargetOptions"
-                  :key="t.tag_id"
-                  class="dropdown-item"
-                  :class="{ 'is-active': deleteMigrateTargetId === t.tag_id }"
-                  @click="selectDeleteMigrateTarget(t)"
-                >
-                  <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
-                  <span
-                    class="tag is-small ml-2"
-                    :class="getCategoryClassByName(t.category_name)"
-                    >{{ t.category_name }}</span
-                  >
-                </a>
-              </div>
-            </div>
-            <p v-if="deleteHelp" class="help" :class="deleteHelpClass">
-              {{ deleteHelp }}
-            </p>
-          </section>
-          <footer class="modal-card-foot">
-            <div class="buttons">
-              <button
-                class="button is-danger"
-                :class="{ 'is-loading': deleteLoading }"
-                @click="submitDelete"
-              >
-                Delete
-              </button>
-              <button class="button" @click="closeDeleteModal">Cancel</button>
-            </div>
-          </footer>
+        <template #footer>
+          <button class="button is-primary" @click="submitForm">
+            {{ formMode === 'edit' ? 'Save Changes' : 'Create Tag' }}
+          </button>
+          <button class="button is-ghost" @click="closeModal">Cancel</button>
+        </template>
+      </AppDialog>
+
+      <AppDialog
+        :open="showMigrateModal"
+        title="Migrate Tag"
+        @update:open="!$event && closeMigrateModal()"
+      >
+        <p class="mb-4">
+          Migrate all items tagged with
+          <strong>{{ migrateSourceTag?.tag_name }}</strong>
+          to another tag. Items that already have the target tag will simply have the source tag
+          removed.
+        </p>
+        <div class="field">
+          <label class="label">Target Tag</label>
+          <div class="control">
+            <input
+              v-model="migrateTargetSearch"
+              class="input"
+              type="text"
+              placeholder="Search for target tag..."
+            />
+          </div>
+          <div v-if="migrateTargetOptions.length > 0" class="dropdown-list">
+            <a
+              v-for="t in migrateTargetOptions"
+              :key="t.tag_id"
+              class="dropdown-item"
+              :class="{ 'is-active': migrateTargetId === t.tag_id }"
+              @click="selectMigrateTarget(t)"
+            >
+              <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
+              <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">{{
+                t.category_name
+              }}</span>
+            </a>
+          </div>
         </div>
-      </div>
+        <p v-if="migrateHelp" class="help" :class="migrateHelpClass">
+          {{ migrateHelp }}
+        </p>
+
+        <template #footer>
+          <button
+            class="button is-warning"
+            :class="{ 'is-loading': migrateLoading }"
+            @click="submitMigrate"
+          >
+            Migrate
+          </button>
+          <button class="button is-ghost" @click="closeMigrateModal">Cancel</button>
+        </template>
+      </AppDialog>
+
+      <AppDialog
+        :open="showDeleteModal"
+        title="Delete Tag"
+        destructive
+        @update:open="!$event && closeDeleteModal()"
+      >
+        <p class="mb-4">
+          Are you sure you want to delete
+          <strong>{{ deleteTargetTag?.tag_name }}</strong
+          >? This will remove the tag from all items.
+        </p>
+        <div class="field">
+          <label class="checkbox">
+            <input v-model="deleteMigrateFirst" type="checkbox" />
+            Migrate items to another tag before deleting
+          </label>
+        </div>
+        <div v-if="deleteMigrateFirst" class="field">
+          <label class="label">Migrate To</label>
+          <div class="control">
+            <input
+              v-model="deleteMigrateTargetSearch"
+              class="input"
+              type="text"
+              placeholder="Search for target tag..."
+            />
+          </div>
+          <div v-if="deleteMigrateTargetOptions.length > 0" class="dropdown-list">
+            <a
+              v-for="t in deleteMigrateTargetOptions"
+              :key="t.tag_id"
+              class="dropdown-item"
+              :class="{ 'is-active': deleteMigrateTargetId === t.tag_id }"
+              @click="selectDeleteMigrateTarget(t)"
+            >
+              <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
+              <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">{{
+                t.category_name
+              }}</span>
+            </a>
+          </div>
+        </div>
+        <p v-if="deleteHelp" class="help" :class="deleteHelpClass">
+          {{ deleteHelp }}
+        </p>
+
+        <template #footer>
+          <button
+            class="button is-danger"
+            :class="{ 'is-loading': deleteLoading }"
+            @click="submitDelete"
+          >
+            Delete
+          </button>
+          <button class="button is-ghost" @click="closeDeleteModal">Cancel</button>
+        </template>
+      </AppDialog>
     </div>
   </section>
 </template>
@@ -730,26 +705,96 @@ onMounted(() => {
   cursor: pointer;
 }
 .sort-header:hover {
-  color: #fff;
+  color: var(--text-1);
+}
+
+.row-actions {
+  text-align: right;
+  width: 3rem;
+}
+
+/* The menu trigger is quiet until the row is hovered or it takes focus, so a
+   page of 25 rows isn't 25 competing controls. */
+.row-actions :deep(.menu-trigger) {
+  opacity: 0;
+}
+tbody tr:hover .row-actions :deep(.menu-trigger),
+.row-actions :deep(.menu-trigger:focus-visible),
+.row-actions :deep(.menu-trigger[data-state='open']) {
+  opacity: 1;
 }
 
 .dropdown-list {
-  border: 1px solid #dbdbdb;
-  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
   max-height: 200px;
   overflow-y: auto;
-  margin-top: 0.25rem;
+  margin-top: var(--sp-1);
 }
 
 .dropdown-item {
   display: flex;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  padding: var(--sp-2) var(--sp-3);
   cursor: pointer;
+  font-size: var(--t-md);
+  color: var(--text-1);
 }
 
 .dropdown-item:hover,
 .dropdown-item.is-active {
-  background-color: #f5f5f5;
+  background-color: var(--surface-2);
+}
+
+/* ── Mobile list ───────────────────────────────────────────
+   The table is unusable below ~768px: it overflows by 242px and its rows
+   inflate to 132px because of a column you can't even see. */
+.tag-list {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tag-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag-list-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.tag-list-meta {
+  font-size: var(--t-sm);
+  color: var(--text-3);
+}
+
+.tag-list-empty {
+  padding: var(--sp-4) 0;
+  text-align: center;
+  color: var(--text-3);
+}
+
+@media screen and (max-width: 768px) {
+  .table-container {
+    display: none;
+  }
+  .tag-list {
+    display: block;
+  }
+  /* No hover on touch, so the trigger is always visible here. */
+  .tag-list :deep(.menu-trigger) {
+    opacity: 1;
+  }
 }
 </style>

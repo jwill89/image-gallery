@@ -27,11 +27,17 @@
              media/, cache/, dupes/, logs/, vendor/ untouched),
            - composer install (incl. dev deps: Phinx, the migration tool, is a dev
              dependency)                                   (skip with -SkipComposer),
+           - snapshot db/gallery.db to db/.backups/ via SQLite VACUUM INTO, keeping
+             the five most recent                          (skip with -NoBackup),
            - run migrations via db/setup.php, which baselines a legacy (pre-Phinx)
              database before applying pending migrations    (skip with -SkipMigrate),
            - restore ownership to www-data and clear the API response cache,
            - health-check the API.
-         If any step fails, the previous code is automatically restored.
+         If any step fails, the previous CODE is automatically restored. The
+         database is NOT rolled back automatically — the failure trap fires on any
+         non-zero exit, including after a migration has already succeeded, so
+         reverting data could discard media uploaded during the deploy. A failed
+         migration prints the snapshot path and the exact restore command.
 
     Uses PuTTY's pscp/plink so the DigitalOcean .ppk key works directly. They run
     in batch mode, so a passphrase-protected .ppk must be loaded into Pageant first:
@@ -170,9 +176,11 @@ $backendItems = @('index.php', '.htaccess', 'api', 'includes', 'db', 'phinx.php'
 foreach ($p in $backendItems) {
     if (-not (Test-Path (Join-Path $BackendDir $p))) { Fail "Expected path missing: backend/$p" }
 }
-# Two -C roots flatten backend/* and frontend/dist into one archive; the --exclude
-# keeps the live SQLite DB (and its WAL/SHM sidecars) out of the bundle.
-& tar -czf $tarball --exclude="db/gallery.db*" -C $BackendDir $backendItems -C $FrontendDir 'dist'
+# Two -C roots flatten backend/* and frontend/dist into one archive; the excludes
+# keep the live SQLite DB (and its WAL/SHM sidecars) and any local pre-migrate
+# snapshots out of the bundle. The host's own db/.backups/ survives extraction
+# because tar only overwrites paths the archive actually contains.
+& tar -czf $tarball --exclude="db/gallery.db*" --exclude="db/.backups" -C $BackendDir $backendItems -C $FrontendDir 'dist'
 if ($LASTEXITCODE -ne 0) { Fail "tar failed (exit $LASTEXITCODE)." }
 $sizeMB = (Get-Item $tarball).Length / 1MB
 Write-Ok ("Tarball ready: {0:N1} MB" -f $sizeMB)
@@ -252,10 +260,53 @@ if ($SkipMigrate) {
     $migrate = @'
 echo "==> -SkipMigrate: skipping database migrations"
 '@
-} else {
+} elseif ($NoBackup) {
     $migrate = @'
+echo "==> -NoBackup: skipping database snapshot"
 echo "==> running migrations (baselines a legacy DB, then applies pending)"
 php db/setup.php
+'@
+} else {
+    # Snapshot the database immediately before anything can modify it.
+    #
+    # `cp gallery.db` is NOT safe here: the connection runs in WAL mode, so a
+    # plain copy misses whatever is still sitting in the -wal file. `VACUUM INTO`
+    # is atomic, WAL-aware, and reachable straight from PDO, so this needs no
+    # sqlite3 binary on the host.
+    #
+    # The snapshot is deliberately NOT restored automatically by the failure
+    # trap. That trap fires on *any* non-zero exit — including steps after a
+    # migration has already succeeded — and silently rolling the database back
+    # would discard media uploaded during the deploy window. Rolling data back
+    # is a decision, so the path and the exact command are printed instead.
+    $migrate = @'
+echo "==> snapshotting database before migrating"
+if [ -f db/gallery.db ]; then
+  DB_SNAPSHOT="db/.backups/gallery-$(date +%Y%m%d-%H%M%S).db"
+  mkdir -p db/.backups
+  php -r '
+    $out = $argv[1];
+    $pdo = new PDO("sqlite:db/gallery.db");
+    $pdo->exec("VACUUM INTO " . $pdo->quote($out));
+  ' "$DB_SNAPSHOT" || { echo "ERROR: database snapshot failed - aborting before migrate" >&2; exit 4; }
+  echo "    snapshot: $DB_SNAPSHOT ($(du -h "$DB_SNAPSHOT" | cut -f1))"
+  # Keep the five most recent; these are full copies of the DB.
+  ls -1t db/.backups/gallery-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f
+else
+  echo "    no db/gallery.db yet - nothing to snapshot"
+fi
+echo "==> running migrations (baselines a legacy DB, then applies pending)"
+if ! php db/setup.php; then
+  echo "ERROR: migrations failed." >&2
+  # Plain `[ -n ... ] && echo` would return non-zero under `set -e` and exit
+  # here with the wrong status, so branch explicitly.
+  if [ -n "$DB_SNAPSHOT" ]; then
+    echo "  Restore the database with:" >&2
+    echo "    cp -a $DB_SNAPSHOT db/gallery.db && rm -f db/gallery.db-wal db/gallery.db-shm" >&2
+    echo "    chown www-data:www-data db/gallery.db" >&2
+  fi
+  exit 5
+fi
 '@
 }
 
@@ -281,7 +332,10 @@ foreach ($line in $out) { if ("$line".Trim()) { Write-Host "    $line" } }
 if ($LASTEXITCODE -ne 0 -or -not ($out -match 'DEPLOY_OK')) {
     Fail @"
 Remote deploy failed (exit $LASTEXITCODE).
-  The host automatically restored the previous code from .deploy-backup (unless -NoBackup).
+  The host automatically restored the previous CODE from .deploy-backup (unless -NoBackup).
+  The DATABASE was left as-is. If the failure was in the migrate step, the snapshot
+  path and restore command are printed above; list snapshots with:
+    plink -i "$KeyPath" $remoteTarget "ls -lht $WebRoot/db/.backups/"
   Inspect logs:  plink -i "$KeyPath" $remoteTarget "tail -n 50 $WebRoot/logs/gallery*.log"
 "@
 }

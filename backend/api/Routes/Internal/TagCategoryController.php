@@ -16,12 +16,19 @@ use OpenApi\Attributes as OA;
 class TagCategoryController extends AbstractController
 {
     private const int MAX_CATEGORY_NAME_LENGTH = 50;
-    private const int MAX_SHORTCODE_LENGTH = 5;
+    /**
+     * Colours a tag category may use.
+     *
+     * Hue names only. These are display values and must never overlap the
+     * semantic palette (danger / success / warning / info), which is reserved
+     * for state in the UI. Categories previously stored Bulma state names —
+     * Artist was `danger` — which made the Artist chip and the delete button
+     * the same red. Migration 20260805000000 rewrote the stored values.
+     *
+     * Keep in sync with `VALID_COLORS` in frontend/src/constants/categories.ts.
+     */
     private const array VALID_COLORS = [
-        // Bulma built-in
-        'white', 'light', 'dark', 'primary', 'link', 'info', 'success', 'warning', 'danger',
-        // Extended palette (defined in frontend style.css)
-        'teal', 'purple', 'pink', 'orange', 'cyan', 'lime', 'indigo', 'rose', 'amber', 'emerald',
+        'neutral', 'rose', 'amber', 'emerald', 'sky', 'violet', 'teal', 'orange', 'lime',
     ];
 
     private TagCategoryRepository $category_repository;
@@ -50,7 +57,7 @@ class TagCategoryController extends AbstractController
 
     /**
      * POST /tag-categories — Create a tag category. Returns the created category.
-     * Body: { category_name, category_short, color?, description?, sort_order? }
+     * Body: { category_name, color?, description?, sort_order? }
      */
     #[OA\Post(
         path: '/tag-categories',
@@ -58,10 +65,9 @@ class TagCategoryController extends AbstractController
         tags: ['Tag Categories'],
         security: [['bearerAuth' => []]],
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(
-            required: ['category_name', 'category_short'],
+            required: ['category_name'],
             properties: [
                 new OA\Property(property: 'category_name', type: 'string'),
-                new OA\Property(property: 'category_short', type: 'string'),
                 new OA\Property(property: 'color', type: 'string'),
                 new OA\Property(property: 'description', type: 'string'),
                 new OA\Property(property: 'sort_order', type: 'integer'),
@@ -101,10 +107,9 @@ class TagCategoryController extends AbstractController
         security: [['bearerAuth' => []]],
         parameters: [new OA\Parameter(name: 'category_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(
-            required: ['category_name', 'category_short'],
+            required: ['category_name'],
             properties: [
                 new OA\Property(property: 'category_name', type: 'string'),
-                new OA\Property(property: 'category_short', type: 'string'),
                 new OA\Property(property: 'color', type: 'string'),
                 new OA\Property(property: 'description', type: 'string'),
                 new OA\Property(property: 'sort_order', type: 'integer'),
@@ -204,7 +209,6 @@ class TagCategoryController extends AbstractController
     private function buildValidatedCategory(Response $response, array $params, ?TagCategory $existing = null): TagCategory|Response
     {
         $name = trim($params['category_name'] ?? '');
-        $short = trim(strtolower($params['category_short'] ?? ''));
         $color = trim($params['color'] ?? 'white');
         $description = trim($params['description'] ?? '');
         $sortOrder = (int) ($params['sort_order'] ?? 0);
@@ -215,28 +219,18 @@ class TagCategoryController extends AbstractController
         if (mb_strlen($name) > self::MAX_CATEGORY_NAME_LENGTH) {
             return $this->error($response, 'NameTooLong', 400, 'Category name must be ' . self::MAX_CATEGORY_NAME_LENGTH . ' characters or fewer.');
         }
-        if (empty($short)) {
-            return $this->error($response, 'InvalidInput', 400, 'A shortcode is required.');
-        }
-        if (mb_strlen($short) > self::MAX_SHORTCODE_LENGTH) {
-            return $this->error($response, 'ShortcodeTooLong', 400, 'Shortcode must be ' . self::MAX_SHORTCODE_LENGTH . ' characters or fewer.');
-        }
         if (!in_array($color, self::VALID_COLORS, true)) {
             return $this->error($response, 'InvalidColor', 400, 'The selected color is not valid.');
         }
 
         $excludeId = $existing instanceof TagCategory ? $existing->category_id : 0;
-        $conflicts = $this->category_repository->checkConflicts($name, $short, $excludeId);
+        $conflicts = $this->category_repository->checkConflicts($name, $excludeId);
         if (in_array('name', $conflicts, true)) {
             return $this->error($response, 'NameTaken', 400, "A category named \"{$name}\" already exists.");
-        }
-        if (in_array('short', $conflicts, true)) {
-            return $this->error($response, 'ShortcodeTaken', 400, "The shortcode \"{$short}\" is already in use.");
         }
 
         $category = $existing ?? new TagCategory();
         return $category->setCategoryName($name)
-                 ->setCategoryShort($short)
                  ->setColor($color)
                  ->setDescription($description)
                  ->setSortOrder($sortOrder);

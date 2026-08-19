@@ -13,7 +13,7 @@ tagging system. It is a single-user/small-trusted-group app, not a multi-tenant
 SaaS. Key features:
 
 - Unified media browsing (images, GIFs, videos) with pagination and infinite scroll.
-- Hierarchical **tag system** with categories, colors, shortcodes, and **implications**
+- Hierarchical **tag system** with categories, colors, and **implications**
   (tag A implies tag B → applying A auto-applies B, transitively).
 - **Tag-based search** with include/exclude (`+tag`, `-tag`) filters.
 - **Danbooru API integration**: auto-import tags by MD5 hash, with IQDB visual-similarity
@@ -225,7 +225,7 @@ Explicit OS/Docker env vars take precedence over `.env`. `Configuration` also un
 ```
 media(media_id PK, media_type['image'|'video'], file_name UNIQUE, file_time, hash[MD5], bits_fingerprint,
       width, height, duration[secs, videos], file_size[bytes])   # metadata extracted at ingest
-tag_categories(category_id PK, category_name UNIQUE, category_short UNIQUE, color, description, sort_order)
+tag_categories(category_id PK, category_name UNIQUE COLLATE NOCASE, color[tag hue], description, sort_order)
 tags(tag_id PK, category_id FK→tag_categories, tag_name UNIQUE COLLATE NOCASE)
 media_tags(media_id FK, tag_id FK)              # junction, PK(media_id, tag_id)
 tag_implications(tag_id FK, implied_tag_id FK)  # PK(tag_id, implied_tag_id)
@@ -348,7 +348,26 @@ which is fine given the token's entropy.
 - **State**: Pinia stores (`stores/`). `gallery` holds `allTags`, `categories`, `totalMedia`,
   `blurThumbnails` (persisted to `localStorage`), and `lastViewedItemIds` (used for prev/next
   navigation on the media detail page). `favorites` is a `Set<number>` persisted to `localStorage`.
-  `toast` drives the global notification container.
+  `toast` drives `ToastContainer`.
+- **Feedback has exactly two homes, and a message belongs to one of them.** A *toast* (`toast`
+  store → `ToastContainer`) reports the outcome of a finished action, globally and transiently. An
+  *alert* (`AppAlert`) states a condition in the place it applies to and stays there while you act
+  on it — a failure inside the dialog that caused it, a warning on one section of a page. If the
+  same wording would work in either place, it is a toast, so it is reported once; the bug this
+  replaced was a dialog showing a green banner while an identical toast slid in beside it. Bulma's
+  `.notification` is intentionally left unstyled so ad-hoc banners cannot creep back. Field
+  validation is neither: it sits beside its input on `.help.is-danger`.
+- **Keep alerts and toasts looking unalike.** They must be tellable apart at a glance, since only
+  one of them disappears by itself. A toast is an object *above* the page: neutral `--surface-1`,
+  drop shadow, 3px severity stripe, close button. An alert is *in* the page: flat, no shadow, no
+  border, no stripe, washed with `--<severity>-soft`. Severity rides the wash and the icon, never
+  the words — `--danger` on a washed background measures 4.11:1, under the 4.5 that 14px text must
+  meet, so alert text stays on `--text-1`.
+- **The toast viewport is fixed bottom-right at `z-index: 64`** — above dialogs (60/61), below the
+  lightbox (70/71). It sets `pointer-events: none` with `pointer-events: auto` on each toast:
+  Reka's modal Dialog puts `pointer-events: none` on `<body>` while open, which otherwise leaves
+  Dismiss and Undo dead on any toast raised from inside a dialog, and without the `none` on the
+  viewport its mostly-empty rectangle would swallow clicks meant for the page behind it.
 - **API calls** go through `composables/useApi.ts` (`get/post/put/patch/del/upload`), using paths from
   `api/endpoints.ts`. It auto-attaches the bearer token, throws a structured `ApiError`
   (`status`, `code`, `message`), clears the token on 401, and resolves `204`/empty bodies to
@@ -362,18 +381,66 @@ which is fine given the token's entropy.
   `useApi.ts`; `_`-prefix unused vars.
 - **Data-fetching composables**: `useGalleryData` (paginated lists), `useMediaTags` (detail + tag
   add/remove). Reuse them rather than re-implementing fetch logic.
-- **Routing**: lazy-loaded views in `router/index.ts`; page title from `meta.title`. `perPage=0`
-  is the magic value that switches `GalleryView` into **infinite-scroll** mode.
-- **Styling**: Bulma classes + helpers in `constants/categories.ts` that map a category's
-  `color` to `is-<color>` / `has-text-<color>`. Extended colors (teal, purple, …) are defined in
-  `style.css`. Keep the `VALID_COLORS` list in sync between `constants/categories.ts` (frontend) and
+- **Routing**: lazy-loaded views in `router/index.ts`; page title from `meta.title`.
+  **Infinite scroll is a store preference** (`useGalleryStore().infiniteScroll`, persisted to
+  `localStorage`, toggled from the navbar's view-mode select), *not* a URL param — `perPage=0` was
+  the old sentinel and any `perPage < 1` is now coerced to 40. While scrolling, `GalleryView`
+  mirrors your position into the URL via `router.replace`, and the reload watcher deliberately
+  ignores page-only changes so that sync doesn't re-fetch.
+- **Which navbar controls a route supports is declared on the route**, via `meta.showBlur` and
+  `meta.showViewMode` (typed in `router/index.ts`). Add the flags when you add a route; don't
+  reintroduce a chain of negations in `AppNavbar` — that's how the per-page select ended up live
+  on `/favorites` (which has no pagination) and on the 404 page.
+- **Styling**: a token layer in `style.css` (`--surface-*`, `--text-*`, `--border*`, `--t-*` type
+  scale, `--sp-*` space scale) with Bulma component overrides written against those tokens — no raw
+  hex outside the `:root` blocks. Chrome is deliberately neutral; there is no brand accent.
+  **Three palettes are kept strictly apart**: chrome (greys), semantic (`--danger`/`--success`/
+  `--warning`/`--info`, state only), and tag categories (`--tag-<hue>`, display only). Categories
+  used to store Bulma state names — Artist was `danger` — so a tag chip and the delete button were
+  the same red; migration `20260805000000` moved them to the `tag--<hue>` namespace. Never wire a
+  category to a semantic colour. `constants/categories.ts` maps a category's `color` to
+  `tag--<hue>` / `tag-text--<hue>`; keep its `VALID_COLORS` in sync with
   `TagCategoryController::VALID_COLORS` (backend).
+- **Interactive primitives** come from [Reka UI](https://reka-ui.com). Wrappers live in
+  `components/`: `AppDialog` (all modals; pass `destructive` for irreversible actions and it swaps
+  to `AlertDialog`), `AppMenu`/`AppMenuItem`, `AppTooltip`, `AppLightbox`, plus `TagMultiSelect`
+  (Combobox), `PaginationBar` (Pagination), `ToastContainer` (Toast) and the navbar's `Toolbar` +
+  `Toggle`. Don't hand-roll a modal, menu or listbox — the hand-rolled ones had no focus trap, no
+  Escape handling and no `aria-modal`.
+- **⚠ Scoped styles cannot reach portalled content.** Reka renders Combobox, DropdownMenu, Tooltip
+  and Toast content through a Teleport, and Vue has no element on this side of that boundary to
+  stamp the `data-v-*` scope id onto — so every rule in a `<style scoped>` block silently fails to
+  match and the surface renders transparent, unbordered and `z-index: auto`. It looks exactly like
+  a z-index bug. **Styles for portalled surfaces go in `style.css`** (see the "Portalled overlay
+  surfaces" section there). Dialog is the exception: its parts do carry the scope id.
+- **`AppTooltip` needs a `TooltipProvider` ancestor** — one is mounted at the root in `App.vue`.
+  Without it the context injection throws during `setup` and takes down the whole surrounding
+  subtree, not just the tooltip.
+- **Shared UI**: `PageHeader` (title + breadcrumb + meta + actions — use it in every view so page
+  titles stop drifting between sizes), `EmptyState`, `StatRow`, `TagCategoryLegend`.
 - **Thumbnails**: derive from `file_name` by stripping the extension →
   `/media/thumbs/<base>.webp` (1x) and `/media/thumbs/<base>@2x.webp` (2x, used in `srcset`).
 - **Service worker** (`public/sw.js`): cache-first for thumbs/static assets, network-first for
-  media list APIs, network-only for full-size media. The app posts `PREFETCH_THUMBNAILS` to warm
-  the next page's thumbnails (`usePrefetch.ts`). Bump `CACHE_VERSION` in `sw.js` when changing
-  caching behavior.
+  media list APIs, network-only for full-size media. Registered **in production only**
+  (`import.meta.env.PROD` in `main.ts`) — a worker caching `/assets/*` in front of the Vite dev
+  server makes local debugging depend on which copy it hands back. The app posts
+  `PREFETCH_THUMBNAILS` to warm the *next* page (paged) or the *next batch* (infinite scroll) via
+  `usePrefetch.ts`; keep both call sites in `GalleryView` in sync. Bump `CACHE_VERSION` in `sw.js`
+  when changing caching behavior — a stale worker keeps controlling the page until every tab for
+  the origin closes, so a hard refresh will not replace it.
+- **Infinite scroll's bottom sentinel needs a top-up loop.** `IntersectionObserver` only reports
+  intersection *changes*, so on a viewport tall enough that a fresh batch doesn't push the sentinel
+  back out of view, no second callback arrives and loading stalls. `loadNextBatch` keeps pulling
+  while `sentinelInTriggerZone()` holds; that helper and the observer share `SENTINEL_MARGIN` so
+  they can't disagree. Also keep layout reads (`getBoundingClientRect`) inside the scroll handler's
+  `requestAnimationFrame` — the cards use `content-visibility: auto`, and reading layout on every
+  scroll event pins the main thread hard enough that the observer never fires.
+- **Never return 502 or 504 from the API.** The site is served through Cloudflare, which treats
+  gateway-class statuses as "the origin is broken" and replaces the response with its own HTML
+  error page. The JSON body — including `message` — is discarded, `parseApiError` then fails to
+  parse it and falls back to `Request failed (HTTP 502)`, so the real reason never reaches the
+  user. For upstream (Danbooru) failures use `429` for rate limits, `500` for credential/config
+  problems and `503` for unreachable/erroring dependencies; those pass through untouched.
 
 ---
 
@@ -416,6 +483,31 @@ which is fine given the token's entropy.
   autowires the graph). If you change a migration, regenerate `schema.sql` (see CONTRIBUTING.md).
   Frontend tests are in `src/__tests__/*.spec.ts` (happy-dom). Untested by design: HTTP
   controllers, and the `ffmpeg`/curl/image-pipeline helpers.
+- **Deploys snapshot the database before migrating** — `scripts/deploy.ps1` writes
+  `db/.backups/gallery-<timestamp>.db` via SQLite `VACUUM INTO` (keeping five) and aborts before
+  migrating if the snapshot fails. Use `VACUUM INTO`, never `cp`: the connection runs in WAL mode,
+  so a plain copy misses whatever is still in the `-wal` sidecar. The snapshot is deliberately
+  **not** auto-restored by the failure trap — that trap fires on any non-zero exit, including
+  after a migration has already succeeded, and reverting data could discard media uploaded during
+  the deploy window; a failed migration prints the path and the restore command instead.
+- **Line endings are LF, enforced by `.gitattributes` (`* text=auto eol=lf`).** phpcs fails a file
+  outright on CRLF and Prettier rewrites it, so a Windows checkout without this produced 34 lint
+  errors in files nobody had touched. `eol=lf` overrides `core.autocrlf`, so no per-developer git
+  config is required — do not "fix" a CRLF complaint by changing your local `core.autocrlf`. Note
+  that converting a file's line endings does *not* fix line endings already escaped inside a
+  generated artifact: `openapi.json` carried `\r\n` inside description strings taken from PHP
+  docblocks, and needed `composer docs` to clear (the `OpenApiSpecTest` catches this).
+- **Do not upgrade to TypeScript 7 yet.** TS 7 is the native port and removed the `./lib/tsc`
+  subpath from its package `exports`. `vue-tsc` (3.3.10, current) resolves that path directly and
+  exits with `ERR_PACKAGE_PATH_NOT_EXPORTED`, so `npm run typecheck` cannot run at all — and
+  `vue-tsc`'s `typescript: ">=5.0.0"` peer range does not express the incompatibility, so npm will
+  install the combination without complaint. Stay on `~6.0.3` until vue-tsc ships TS 7 support.
+
+- **Version bumps are the release trigger.** CI tags and publishes `v<version>` from
+  `frontend/package.json` using the matching `## [<version>]` section of `CHANGELOG.md` as the
+  release body, so bump the version and write its section in the same commit. The **HTTP contract
+  version is separate** — `Configuration::API_VERSION` — and only moves when the API surface
+  changes.
 - Release history lives in `CHANGELOG.md` (Keep a Changelog format). A historical
   `IMPROVEMENTS.md` also exists (gitignored) — old internal review notes, not a current audit;
   don't trust it as the state of the codebase.

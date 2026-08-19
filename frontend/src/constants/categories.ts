@@ -2,61 +2,53 @@
  * Tag category display utilities.
  *
  * Categories are fetched from the API and stored in the gallery store.
- * This module provides helper functions that derive CSS classes
- * from the category color stored in the database.
+ * This module maps a category's stored `color` to the CSS classes defined
+ * in `style.css`.
  *
- * Supports both Bulma built-in colors (white, light, dark, primary,
- * link, info, success, warning, danger) and extended custom colors
- * (teal, purple, pink, orange, cyan, lime, indigo, rose, amber, emerald)
- * defined in style.css.
+ * These colours are **display only**. They deliberately do not overlap with
+ * the semantic palette (danger / success / warning / info), which is reserved
+ * for state. Categories used to be stored as Bulma semantic names — Artist was
+ * literally `danger`, so the Artist chip and the delete button were the same
+ * red — which both muddied the meaning of colour and tied the tag palette to
+ * Bulma. The `tag--<hue>` namespace below is ours and survives dropping Bulma.
+ *
+ * Keep `VALID_COLORS` in sync with `TagCategoryController::VALID_COLORS`.
  */
 
 import { useGalleryStore, type TagCategory } from '../stores/gallery'
 
 /**
- * All color options available for tag categories.
- * Bulma built-in colors + custom extended palette.
+ * Colours a tag category may use. Hue names only — nothing here may be a
+ * state name, or we end up back where we started.
  */
 export const VALID_COLORS = [
-  // Bulma built-in
-  'white',
-  'light',
-  'dark',
-  'primary',
-  'link',
-  'info',
-  'success',
-  'warning',
-  'danger',
-  // Extended palette
-  'teal',
-  'purple',
-  'pink',
-  'orange',
-  'cyan',
-  'lime',
-  'indigo',
+  'neutral',
   'rose',
   'amber',
   'emerald',
-  'blue',
-  'green',
-  'yellow',
   'sky',
-  'fuchsia',
-  'slate',
+  'violet',
+  'teal',
+  'orange',
+  'lime',
 ] as const
 
 export type ValidColor = (typeof VALID_COLORS)[number]
 
-// ── Color → CSS class derivations ───────────────────────────
+const DEFAULT_COLOR: ValidColor = 'neutral'
 
-export function colorToTagClass(color: string): string {
-  return `is-${color || 'white'}`
+function normalise(color: string | null | undefined): ValidColor {
+  return VALID_COLORS.includes(color as ValidColor) ? (color as ValidColor) : DEFAULT_COLOR
 }
 
-export function colorToTextClass(color: string): string {
-  return `has-text-${color || 'white'}`
+// ── Color → CSS class derivations ───────────────────────────
+
+export function colorToTagClass(color: string | null | undefined): string {
+  return `tag--${normalise(color)}`
+}
+
+export function colorToTextClass(color: string | null | undefined): string {
+  return `tag-text--${normalise(color)}`
 }
 
 // ── Lookup helpers (use store data) ─────────────────────────
@@ -71,7 +63,7 @@ function findCategory(predicate: (c: TagCategory) => boolean): TagCategory | und
  */
 export function getCategoryClassById(categoryId: number): string {
   const cat = findCategory((c) => c.category_id === categoryId)
-  return cat ? colorToTagClass(cat.color) : 'is-white'
+  return colorToTagClass(cat?.color)
 }
 
 /**
@@ -80,7 +72,7 @@ export function getCategoryClassById(categoryId: number): string {
  */
 export function getCategoryClassByName(categoryName: string | null | undefined): string {
   const cat = findCategory((c) => c.category_name === categoryName)
-  return cat ? colorToTagClass(cat.color) : 'is-white'
+  return colorToTagClass(cat?.color)
 }
 
 /**
@@ -89,5 +81,5 @@ export function getCategoryClassByName(categoryName: string | null | undefined):
  */
 export function getTextClassByName(categoryName: string | null | undefined): string {
   const cat = findCategory((c) => c.category_name === categoryName)
-  return cat ? colorToTextClass(cat.color) : 'has-text-white'
+  return colorToTextClass(cat?.color)
 }

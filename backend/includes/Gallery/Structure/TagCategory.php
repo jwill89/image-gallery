@@ -20,10 +20,8 @@ class TagCategory extends AbstractStructure
     public private(set) int $category_id = 0;
     #[OA\Property(type: 'string')]
     public private(set) string $category_name = '';
-    #[OA\Property(type: 'string', description: 'Short code (<= 5 chars) used in tag prefixes.')]
-    public private(set) string $category_short = '';
-    #[OA\Property(type: 'string', description: 'Bulma/extended palette color name.')]
-    public private(set) string $color = 'white';
+    #[OA\Property(type: 'string', description: 'Tag palette hue. Display only — never a semantic state name.')]
+    public private(set) string $color = 'neutral';
     #[OA\Property(type: 'string')]
     public private(set) string $description = '';
     #[OA\Property(type: 'integer')]
@@ -38,12 +36,6 @@ class TagCategory extends AbstractStructure
     public function setCategoryName(string $category_name): self
     {
         $this->category_name = $category_name;
-        return $this;
-    }
-
-    public function setCategoryShort(string $category_short): self
-    {
-        $this->category_short = $category_short;
         return $this;
     }
 
